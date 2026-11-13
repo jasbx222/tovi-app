@@ -5,7 +5,9 @@ import 'api.dart';
 import 'copy.dart';
 import 'course_page.dart';
 import 'exam_page.dart';
+import 'live_parts.dart';
 import 'meeting_page.dart';
+import 'progress_page.dart';
 import 'push.dart';
 import 'redeem.dart';
 import 'session.dart';
@@ -42,15 +44,15 @@ class _HomeShellState extends State<HomeShell> {
       ProfilePage(session: widget.session),
     ];
     final tabs = [
-      ToviTab(Icons.home_rounded, copy.home),
-      ToviTab(Icons.calendar_month_rounded, copy.schedule),
-      ToviTab(Icons.auto_stories_rounded, copy.learn),
-      ToviTab(Icons.notifications_rounded, copy.inbox),
-      ToviTab(Icons.person_rounded, copy.profile),
+      ToviTab(Icons.home_outlined, copy.home, activeIcon: Icons.home_rounded),
+      ToviTab(Icons.event_note_outlined, copy.schedule, activeIcon: Icons.event_note_rounded),
+      ToviTab(Icons.auto_stories_outlined, copy.learn, activeIcon: Icons.auto_stories_rounded),
+      ToviTab(Icons.notifications_none_rounded, copy.inbox, activeIcon: Icons.notifications_rounded),
+      ToviTab(Icons.person_outline_rounded, copy.profile, activeIcon: Icons.person_rounded),
     ];
     final wide = MediaQuery.sizeOf(context).width >= 840;
     return Scaffold(
-      backgroundColor: Tovi.surface,
+      backgroundColor: Tovi.page,
       body: SafeArea(
         bottom: false,
         child: wide
@@ -104,7 +106,7 @@ class _Rail extends StatelessWidget {
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
                     child: Row(children: [
-                      Icon(tabs[i].icon, color: index == i ? Tovi.violet : Tovi.muted, size: 22),
+                      Icon(index == i ? tabs[i].activeIcon : tabs[i].icon, color: index == i ? Tovi.violet : Tovi.muted, size: 22),
                       const SizedBox(width: 10),
                       Text(tabs[i].label, style: TextStyle(fontWeight: FontWeight.w700, color: index == i ? Tovi.violet : Tovi.ink)),
                     ]),
@@ -134,6 +136,7 @@ class _HomePageState extends State<HomePage> {
   String notes = '—';
   String error = '';
   List<Map<String, dynamic>> domains = [];
+  Map<String, dynamic>? progress;
   var loading = true;
 
   @override
@@ -148,6 +151,7 @@ class _HomePageState extends State<HomePage> {
       _guard(widget.session.api.get('/api/student/profile')),
       _guard(widget.session.api.get('/api/student/notifications')),
       _guard(widget.session.api.get('/api/student/learning-domains')),
+      _guard(widget.session.api.get('/api/student/progress')),
     ]);
     if (!mounted) return;
     final home = results[0];
@@ -170,6 +174,7 @@ class _HomePageState extends State<HomePage> {
       name = nextName;
       notes = nextNotes;
       domains = results[3] is List ? asMaps(results[3]) : [];
+      progress = results[4] is Map ? asMap(results[4]) : null;
       error = '';
       loading = false;
     });
@@ -197,8 +202,6 @@ class _HomePageState extends State<HomePage> {
     final courses = asMaps(data?['courses']);
     final sessions = asMaps(data?['sessions']);
     final ads = asMaps(data?['ads']);
-    final minutes = [for (final row in sessions) asInt(row['durationMinutes']).toDouble()];
-    final total = minutes.fold<int>(0, (sum, value) => sum + value.round());
     final shown = name.isEmpty ? copy.brand : name;
     return RefreshIndicator(
       color: Tovi.violet,
@@ -217,29 +220,45 @@ class _HomePageState extends State<HomePage> {
           const SizedBox(height: 16),
           _RedeemStrip(title: copy.redeem, hint: copy.pick('16 رقماً لكورس أو ملخص أو اختبار أو صف.', '16 digits for a course, summary, exam, or classroom.'), onTap: redeem),
           if (error.isNotEmpty) ErrorNote(text: error, onRetry: load),
-          SectionHead(title: copy.pick('نشاطك', 'Your activity')),
           if (loading)
             const _HomeSkeleton()
           else ...[
+            if (_nextSession(sessions) != null) ...[
+              const SizedBox(height: 18),
+              _NextLive(
+                row: _nextSession(sessions)!,
+                copy: copy,
+                onOpen: () => Navigator.push(context, toviRoute(MeetingPage(session: widget.session, sessionId: asText(_nextSession(sessions)!['id'])))),
+              ),
+            ],
+            if (progress != null) ...[
+              SectionHead(title: copy.pick('تقدّمك', 'Your progress')),
+              ProgressCard(copy: copy, data: progress!, onOpen: () async {
+                await Navigator.push(context, toviRoute(ProgressPage(session: widget.session)));
+                if (mounted) await load();
+              }),
+            ],
+            SectionHead(title: copy.pick('نشاطك', 'Your activity')),
+            Row(children: [
+              Expanded(child: StatPill(color: Tovi.blue, icon: Icons.menu_book_rounded, label: copy.pick('الدورات', 'Courses'), value: '${courses.length}')),
+              const SizedBox(width: 10),
+              Expanded(child: StatPill(color: Tovi.coral, icon: Icons.event_rounded, label: copy.pick('الجلسات', 'Sessions'), value: '${sessions.length}')),
+              const SizedBox(width: 10),
+              Expanded(child: StatPill(color: Tovi.violet, icon: Icons.notifications_none_rounded, label: copy.inbox, value: notes)),
+            ]),
             if (domains.isNotEmpty) ...[
               SectionHead(title: copy.pick('المجالات', 'Domains')),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 for (final row in domains)
                   ActionChip(
                     label: Text(asText(row['name'])),
-                    backgroundColor: Tovi.lilac,
+                    backgroundColor: Tovi.surface,
                     side: BorderSide.none,
+                    elevation: 0,
                     onPressed: () => Navigator.push(context, toviRoute(CatalogPage(session: widget.session, path: '/api/student/learning-domains', field: 'name', title: copy.pick('المجالات', 'Domains')))),
                   ),
               ]),
             ],
-            Row(children: [
-              Expanded(child: StatPill(color: Tovi.blue, icon: Icons.menu_book_rounded, label: copy.pick('الدورات', 'Courses'), value: '${courses.length}')),
-              const SizedBox(width: 10),
-              Expanded(child: StatPill(color: Tovi.apricot, icon: Icons.event_rounded, label: copy.pick('الجلسات', 'Sessions'), value: '${sessions.length}')),
-              const SizedBox(width: 10),
-              Expanded(child: StatPill(color: Tovi.violet, icon: Icons.notifications_none_rounded, label: copy.inbox, value: notes)),
-            ]),
             SectionHead(
               title: copy.pick('دوراتي', 'My courses'),
               action: courses.isEmpty ? null : copy.viewAll,
@@ -271,23 +290,8 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
             if (sessions.isNotEmpty) ...[
-              SectionHead(title: copy.pick('وقت الجلسات', 'Session time'), action: copy.schedule, onAction: widget.onOpenSchedule),
-              Container(
-                padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
-                decoration: BoxDecoration(color: Tovi.night, borderRadius: BorderRadius.circular(28)),
-                child: Column(
-                  children: [
-                    Row(children: [
-                      Expanded(child: Text(copy.pick('الدقائق المجدولة', 'Scheduled minutes'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700))),
-                      Text('$total ${copy.pick('د', 'min')}', style: TextStyle(color: Colors.white.withValues(alpha: 0.78), fontWeight: FontWeight.w700)),
-                    ]),
-                    const SizedBox(height: 8),
-                    SessionChart(values: minutes),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 12),
-              for (final row in sessions.take(2))
+              SectionHead(title: copy.pick('جلساتك القادمة', 'Upcoming sessions'), action: copy.schedule, onAction: widget.onOpenSchedule),
+              for (final row in sessions.take(3))
                 Padding(
                   padding: const EdgeInsets.only(bottom: 10),
                   child: _SessionRow(
@@ -321,6 +325,85 @@ class _HomePageState extends State<HomePage> {
   }
 }
 
+Map<String, dynamic>? _nextSession(List<Map<String, dynamic>> sessions) {
+  final now = DateTime.now();
+  Map<String, dynamic>? best;
+  DateTime? bestStart;
+  for (final row in sessions) {
+    final start = asDate(row['startsAt']);
+    if (start == null || asText(row['status']) == 'Cancelled') continue;
+    final end = start.add(Duration(minutes: asInt(row['durationMinutes'])));
+    if (end.isBefore(now)) continue;
+    if (bestStart == null || start.isBefore(bestStart)) {
+      best = row;
+      bestStart = start;
+    }
+  }
+  return best;
+}
+
+class _NextLive extends StatelessWidget {
+  const _NextLive({required this.row, required this.copy, required this.onOpen});
+  final Map<String, dynamic> row;
+  final Copy copy;
+  final VoidCallback onOpen;
+
+  @override
+  Widget build(BuildContext context) {
+    final start = asDate(row['startsAt']) ?? DateTime.now();
+    final now = DateTime.now();
+    final live = !now.isBefore(start);
+    final soon = start.difference(now).inMinutes < 10;
+    final title = firstMeta(row, const ['title', 'classroomTitle']);
+    final sameDay = start.year == now.year && start.month == now.month && start.day == now.day;
+    final when = live
+        ? copy.pick('مباشر الآن', 'Live now')
+        : '${sameDay ? copy.pick('اليوم', 'Today') : copy.pick('${start.day}/${start.month}', '${start.month}/${start.day}')} · ${clockOf(start, copy.arabic)}';
+    return Material(
+      color: live ? ToviTokens.coral : Tovi.violet,
+      borderRadius: BorderRadius.circular(ToviTokens.radiusLg),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onOpen,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+          child: Row(children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.2), borderRadius: BorderRadius.circular(99)),
+                  child: Row(mainAxisSize: MainAxisSize.min, children: [
+                    Icon(live ? Icons.sensors_rounded : Icons.schedule_rounded, size: 14, color: Colors.white),
+                    const SizedBox(width: 6),
+                    Text(when, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w700)),
+                  ]),
+                ),
+                const SizedBox(height: 12),
+                Text(title.isEmpty ? copy.meeting : title, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontSize: 19, fontWeight: FontWeight.w700, height: 1.3)),
+                const SizedBox(height: 4),
+                Text(
+                  [asText(row['teacherName']), '${asInt(row['durationMinutes'])} ${copy.pick('دقيقة', 'min')}'].where((t) => t.isNotEmpty).join(' · '),
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 13),
+                ),
+              ]),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(99)),
+              child: Text(
+                live ? copy.pick('ادخل', 'Join') : (soon ? copy.pick('الانتظار', 'Lobby') : copy.pick('التفاصيل', 'Details')),
+                style: TextStyle(color: live ? ToviTokens.coral : Tovi.violet, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
 class _HomeHead extends StatelessWidget {
   const _HomeHead({required this.name, required this.role, required this.onSearch, required this.onInbox, this.notes, required this.inboxTip});
   final String name;
@@ -334,15 +417,15 @@ class _HomeHead extends StatelessWidget {
   Widget build(BuildContext context) {
     final initial = name.isEmpty ? 'T' : name.substring(0, 1);
     return Row(children: [
-      CircleAvatar(radius: 24, backgroundColor: Tovi.lilac, child: Text(initial, style: const TextStyle(color: Tovi.violet, fontWeight: FontWeight.w700, fontSize: 18))),
+      CircleAvatar(radius: 24, backgroundColor: Tovi.violet, child: Text(initial, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 18))),
       const SizedBox(width: 12),
       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         Text(role, style: const TextStyle(color: Tovi.muted, fontSize: 13)),
       ])),
-      CircleButton(icon: Icons.search_rounded, tooltip: MaterialLocalizations.of(context).searchFieldLabel, onPressed: onSearch),
+      CircleButton(icon: Icons.search_rounded, tooltip: MaterialLocalizations.of(context).searchFieldLabel, onPressed: onSearch, background: Tovi.surface),
       const SizedBox(width: 8),
-      CircleButton(icon: Icons.notifications_none_rounded, tooltip: inboxTip, badge: notes, onPressed: onInbox),
+      CircleButton(icon: Icons.notifications_none_rounded, tooltip: inboxTip, badge: notes, onPressed: onInbox, background: Tovi.surface),
     ]);
   }
 }
@@ -356,21 +439,21 @@ class _RedeemStrip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: const Color(0xFFFFF1E6),
-      borderRadius: BorderRadius.circular(22),
+      color: ToviTokens.sunSoft,
+      borderRadius: BorderRadius.circular(ToviTokens.radiusMd),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
           child: Row(children: [
-            Container(width: 40, height: 40, alignment: Alignment.center, decoration: const BoxDecoration(color: Tovi.apricot, shape: BoxShape.circle), child: const Icon(Icons.vpn_key_rounded, color: Colors.white, size: 18)),
+            Container(width: 40, height: 40, alignment: Alignment.center, decoration: const BoxDecoration(color: Tovi.sun, shape: BoxShape.circle), child: const Icon(Icons.vpn_key_rounded, color: Tovi.ink, size: 18)),
             const SizedBox(width: 12),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
               Text(hint, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Tovi.muted, fontSize: 12, height: 1.35)),
             ])),
-            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.apricot),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Color(0xFF9A6A00)),
           ]),
         ),
       ),
@@ -383,40 +466,68 @@ class _HomeSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return const SkeletonFade(child: Column(children: [
-      Row(children: [Expanded(child: Bone(height: 112, radius: 22)), SizedBox(width: 10), Expanded(child: Bone(height: 112, radius: 22)), SizedBox(width: 10), Expanded(child: Bone(height: 112, radius: 22))]),
       SizedBox(height: 18),
-      Bone(height: 176, radius: 26),
+      Bone(height: 150, radius: 24),
+      SizedBox(height: 18),
+      Row(children: [Expanded(child: Bone(height: 112, radius: 18)), SizedBox(width: 10), Expanded(child: Bone(height: 112, radius: 18)), SizedBox(width: 10), Expanded(child: Bone(height: 112, radius: 18))]),
     ]));
   }
 }
 
 class _SessionRow extends StatelessWidget {
-  const _SessionRow({required this.row, required this.copy, required this.onJoin, this.color = Tovi.surface, this.light = false});
+  const _SessionRow({required this.row, required this.copy, required this.onJoin});
   final Map<String, dynamic> row;
   final Copy copy;
   final VoidCallback onJoin;
-  final Color color;
-  final bool light;
 
   @override
   Widget build(BuildContext context) {
     final when = asDate(row['startsAt']);
-    final title = firstMeta(row, const ['title', 'name', 'courseTitle']);
+    final minutes = asInt(row['durationMinutes']);
+    final title = firstMeta(row, const ['title', 'classroomTitle', 'name', 'courseTitle']);
     final headline = title.isEmpty ? (when == null ? asText(row['startsAt']) : _clock(when, copy.arabic)) : title;
-    final detail = '${asInt(row['durationMinutes'])} ${copy.pick('دقيقة', 'min')}';
-    final ink = light ? Colors.white : Tovi.ink;
-    final muted = light ? Colors.white.withValues(alpha: 0.8) : Tovi.muted;
+    final now = DateTime.now();
+    final cancelled = asText(row['status']) == 'Cancelled';
+    final live = when != null && !now.isBefore(when) && now.isBefore(when.add(Duration(minutes: minutes)));
+    final ended = when != null && !now.isBefore(when.add(Duration(minutes: minutes)));
+    final lobby = when != null && !live && !ended && when.difference(now).inMinutes < 10;
+    final (label, tone, soft) = cancelled
+        ? (copy.pick('ملغاة', 'Cancelled'), Tovi.muted, ToviTokens.sunken)
+        : live
+            ? (copy.pick('مباشر', 'Live'), ToviTokens.coral, ToviTokens.coralSoft)
+            : lobby
+                ? (copy.pick('غرفة الانتظار', 'Lobby'), Tovi.violet, ToviTokens.violetSoft)
+                : ended
+                    ? (copy.pick('انتهت', 'Ended'), Tovi.muted, ToviTokens.sunken)
+                    : (copy.pick('قادمة', 'Upcoming'), ToviTokens.mint, ToviTokens.mintSoft);
+    final detail = [
+      if (when != null) _clock(when, copy.arabic),
+      '$minutes ${copy.pick('دقيقة', 'min')}',
+      if (asText(row['teacherName']).isNotEmpty) asText(row['teacherName']),
+    ].join(' · ');
     return SoftPanel(
-      color: color,
       onTap: onJoin,
+      padding: const EdgeInsets.all(14),
       child: Row(children: [
+        Container(
+          width: 44,
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: soft, borderRadius: BorderRadius.circular(ToviTokens.radiusSm)),
+          child: Icon(live ? Icons.sensors_rounded : (ended ? Icons.history_rounded : Icons.videocam_outlined), color: tone, size: 22),
+        ),
+        const SizedBox(width: 12),
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(headline, style: TextStyle(color: ink, fontWeight: FontWeight.w700, fontSize: 16)),
-          const SizedBox(height: 4),
-          Text(when == null ? detail : '${_clock(when, copy.arabic)} · $detail', style: TextStyle(color: muted, fontSize: 13)),
+          Text(headline, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Tovi.ink, fontWeight: FontWeight.w700, fontSize: 15.5)),
+          const SizedBox(height: 3),
+          Text(detail, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Tovi.muted, fontSize: 12.5)),
         ])),
         const SizedBox(width: 8),
-        Text(copy.meeting, style: TextStyle(color: light ? Colors.white : Tovi.violet, fontWeight: FontWeight.w700)),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(color: soft, borderRadius: BorderRadius.circular(99)),
+          child: Text(label, style: TextStyle(color: tone, fontSize: 12, fontWeight: FontWeight.w700)),
+        ),
       ]),
     );
   }
@@ -493,7 +604,6 @@ class _SchedulePageState extends State<SchedulePage> {
           ),
           const SizedBox(height: 16),
           SoftPanel(
-            color: Tovi.lilac,
             onTap: todayRows.isEmpty ? null : () => _join(todayRows.first),
             child: Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -507,7 +617,7 @@ class _SchedulePageState extends State<SchedulePage> {
                 ),
               ])),
               if (todayRows.isNotEmpty)
-                Container(width: 36, height: 36, alignment: Alignment.center, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.violet)),
+                Container(width: 36, height: 36, alignment: Alignment.center, decoration: const BoxDecoration(color: Tovi.lilac, shape: BoxShape.circle), child: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.violet)),
             ]),
           ),
           if (weekMinutes > 0 && dayMinutes > 0) ...[
@@ -517,13 +627,13 @@ class _SchedulePageState extends State<SchedulePage> {
               child: LinearProgressIndicator(
                 minHeight: 8,
                 value: (dayMinutes / weekMinutes).clamp(0, 1).toDouble(),
-                backgroundColor: Tovi.lilac,
+                backgroundColor: ToviTokens.sunken,
                 color: Tovi.violet,
               ),
             ),
           ],
           const SizedBox(height: 18),
-          Text(copy.pick('جدولي', 'My schedule'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          Text(copy.pick('جدولي', 'My schedule'), style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
           const SizedBox(height: 12),
           if (loading) const SkeletonFade(child: Bone(height: 88, radius: 22))
           else if (error.isNotEmpty) ErrorNote(text: error, onRetry: load)
@@ -533,7 +643,7 @@ class _SchedulePageState extends State<SchedulePage> {
               if (i > 0) _gap(todayRows[i - 1], todayRows[i], copy),
               Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 SizedBox(width: 72, child: Text(_clock(asDate(todayRows[i]['startsAt'])!, copy.arabic), style: const TextStyle(color: Tovi.muted, fontWeight: FontWeight.w700))),
-                Expanded(child: _SessionRow(row: todayRows[i], copy: copy, color: Tovi.courses[i % Tovi.courses.length], light: true, onJoin: () => _join(todayRows[i]))),
+                Expanded(child: _SessionRow(row: todayRows[i], copy: copy, onJoin: () => _join(todayRows[i]))),
               ]),
               const SizedBox(height: 10),
             ],
@@ -545,8 +655,8 @@ class _SchedulePageState extends State<SchedulePage> {
           if (next != null) ...[
             const SizedBox(height: 8),
             Material(
-              color: Tovi.ink,
-              borderRadius: BorderRadius.circular(22),
+              color: Tovi.violet,
+              borderRadius: BorderRadius.circular(ToviTokens.radiusMd),
               clipBehavior: Clip.antiAlias,
               child: InkWell(
                 onTap: () => _join(next),
@@ -558,7 +668,7 @@ class _SchedulePageState extends State<SchedulePage> {
                       const SizedBox(height: 2),
                       Text(_nextLabel(next, copy), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
                     ])),
-                    Container(width: 36, height: 36, alignment: Alignment.center, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.ink)),
+                    Container(width: 36, height: 36, alignment: Alignment.center, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.violet)),
                   ]),
                 ),
               ),
@@ -601,22 +711,26 @@ class _DayChip extends StatelessWidget {
     const ar = ['ن', 'ث', 'ر', 'خ', 'ج', 'س', 'ح'];
     const en = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
     final letter = (arabic ? ar : en)[day.weekday - 1];
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(18),
-      child: SizedBox(
-        width: 40,
-        child: Column(children: [
-          Text(letter, style: TextStyle(color: selected ? Tovi.violet : Tovi.muted, fontWeight: FontWeight.w700, fontSize: 12)),
-          const SizedBox(height: 6),
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(color: selected ? Tovi.violet : Colors.transparent, shape: BoxShape.circle),
-            child: Text('${day.day}', style: TextStyle(color: selected ? Colors.white : Tovi.ink, fontWeight: FontWeight.w700)),
+    return Semantics(
+      button: true,
+      selected: selected,
+      child: GestureDetector(
+        onTap: onTap,
+        child: AnimatedContainer(
+          duration: ToviTokens.fast,
+          width: 44,
+          padding: const EdgeInsets.symmetric(vertical: 10),
+          decoration: BoxDecoration(
+            color: selected ? Tovi.violet : Tovi.surface,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: selected ? ToviTokens.floating : ToviTokens.raised,
           ),
-        ]),
+          child: Column(children: [
+            Text(letter, style: TextStyle(color: selected ? Colors.white70 : Tovi.muted, fontWeight: FontWeight.w600, fontSize: 12)),
+            const SizedBox(height: 4),
+            Text('${day.day}', style: TextStyle(color: selected ? Colors.white : Tovi.ink, fontWeight: FontWeight.w700, fontSize: 16)),
+          ]),
+        ),
       ),
     );
   }
@@ -715,7 +829,7 @@ class LearnPage extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       children: [
-        Text(copy.pick('اكتشف', 'Discover'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+        Text(copy.pick('اكتشف', 'Discover'), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
         const SizedBox(height: 6),
         Text(copy.pick('المجالات والدورات والملخصات.', 'Domains, courses, and summaries.'), style: const TextStyle(color: Tovi.muted)),
         const SizedBox(height: 16),
@@ -728,21 +842,20 @@ class LearnPage extends StatelessWidget {
             gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.35),
             itemBuilder: (context, i) {
               final link = links[i];
-              return Material(
-                color: Tovi.courses[i % Tovi.courses.length],
-                borderRadius: BorderRadius.circular(24),
-                clipBehavior: Clip.antiAlias,
-                child: InkWell(
-                  onTap: () => Navigator.push(context, toviRoute(CatalogPage(session: session, path: link.$1, field: link.$2, title: link.$3))),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Icon(link.$4, color: Colors.white, size: 26),
-                      const Spacer(),
-                      Text(link.$3, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
-                    ]),
+              final tone = Tovi.courses[i % Tovi.courses.length];
+              return SoftPanel(
+                onTap: () => Navigator.push(context, toviRoute(CatalogPage(session: session, path: link.$1, field: link.$2, title: link.$3))),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Container(
+                    width: 44,
+                    height: 44,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: tone.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(ToviTokens.radiusSm)),
+                    child: Icon(link.$4, color: tone, size: 24),
                   ),
-                ),
+                  const Spacer(),
+                  Text(link.$3, style: const TextStyle(color: Tovi.ink, fontWeight: FontWeight.w700, fontSize: 16)),
+                ]),
               );
             },
           );
@@ -982,7 +1095,7 @@ class _InboxPageState extends State<InboxPage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
-          Text(copy.inbox, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+          Text(copy.inbox, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
           const SizedBox(height: 14),
           if (loading) const SkeletonFade(child: Bone(height: 88, radius: 22))
           else if (error.isNotEmpty) ErrorNote(text: error, onRetry: load)
@@ -992,11 +1105,24 @@ class _InboxPageState extends State<InboxPage> {
               Padding(
                 padding: const EdgeInsets.only(bottom: 10),
                 child: SoftPanel(child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6), decoration: const BoxDecoration(color: Tovi.violet, shape: BoxShape.circle)),
+                  Container(
+                    width: 40,
+                    height: 40,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(color: ToviTokens.violetSoft, borderRadius: BorderRadius.circular(ToviTokens.radiusSm)),
+                    child: const Icon(Icons.notifications_rounded, color: Tovi.violet, size: 20),
+                  ),
                   const SizedBox(width: 12),
                   Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text(asText(row['title']), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                    if (asText(row['body']).isNotEmpty) Text(asText(row['body']), style: const TextStyle(color: Tovi.muted, height: 1.45)),
+                    Text(asText(row['title']), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15.5)),
+                    if (asText(row['body']).isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(asText(row['body']), style: const TextStyle(color: Tovi.muted, height: 1.45)),
+                    ],
+                    if (asDate(row['createdAt']) != null) ...[
+                      const SizedBox(height: 6),
+                      Text('${asDate(row['createdAt'])!.day}/${asDate(row['createdAt'])!.month} · ${clockOf(asDate(row['createdAt'])!, copy.arabic)}', style: const TextStyle(color: ToviTokens.faint, fontSize: 12)),
+                    ],
                   ])),
                 ])),
               ),
@@ -1067,21 +1193,23 @@ class _ProfilePageState extends State<ProfilePage> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
         children: [
-          Text(copy.pick('حسابي', 'My account'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+          Text(copy.pick('حسابي', 'My account'), style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
           const SizedBox(height: 16),
           if (loading) const SkeletonFade(child: Bone(height: 96, radius: 24))
           else ...[
             if (error.isNotEmpty) ErrorNote(text: error, onRetry: load),
-            SoftPanel(color: Tovi.lilac, child: Row(children: [
-              CircleAvatar(radius: 28, backgroundColor: Tovi.violet, child: Text(full.isEmpty ? 'T' : full.substring(0, 1), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 20))),
+            SoftPanel(color: Tovi.violet, padding: const EdgeInsets.all(18), child: Row(children: [
+              CircleAvatar(radius: 30, backgroundColor: Colors.white, child: Text(full.isEmpty ? 'T' : full.substring(0, 1), style: const TextStyle(color: Tovi.violet, fontWeight: FontWeight.w700, fontSize: 22))),
               const SizedBox(width: 14),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(full.isEmpty ? copy.brand : full, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
-                Text(asText(profile?['phone']), style: const TextStyle(color: Tovi.muted)),
+                Text(full.isEmpty ? copy.brand : full, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Colors.white)),
+                Text(asText(profile?['phone']), textDirection: TextDirection.ltr, style: TextStyle(color: Colors.white.withValues(alpha: 0.8))),
               ])),
             ])),
             const SizedBox(height: 14),
             SoftPanel(padding: EdgeInsets.zero, child: Column(children: [
+              _ProfileAction(icon: Icons.insights_rounded, label: copy.pick('تقدّمي ونقاطي', 'My progress and XP'), onTap: () => Navigator.push(context, toviRoute(ProgressPage(session: widget.session)))),
+              const Divider(height: 1, color: Tovi.line),
               _ProfileAction(icon: Icons.quiz_rounded, label: copy.pick('فتح اختبار', 'Open an exam'), onTap: () => Navigator.push(context, toviRoute(ExamEntry(session: widget.session)))),
               const Divider(height: 1, color: Tovi.line),
               _ProfileAction(icon: Icons.language_rounded, label: copy.pick('English', 'العربية'), onTap: widget.session.toggleLanguage),
@@ -1093,7 +1221,11 @@ class _ProfilePageState extends State<ProfilePage> {
               ),
             ])),
             const SizedBox(height: 14),
-            SoftPanel(onTap: confirmSignOut, child: Text(copy.pick('خروج', 'Sign out'), style: const TextStyle(fontWeight: FontWeight.w700, color: Tovi.danger))),
+            SoftPanel(onTap: confirmSignOut, child: Row(children: [
+              const Icon(Icons.logout_rounded, color: Tovi.danger),
+              const SizedBox(width: 12),
+              Text(copy.pick('خروج', 'Sign out'), style: const TextStyle(fontWeight: FontWeight.w700, color: Tovi.danger)),
+            ])),
           ],
         ],
       ),
@@ -1135,7 +1267,13 @@ class _ProfileAction extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         child: Row(children: [
-          Icon(icon, color: onTap == null ? Tovi.muted : Tovi.violet),
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: onTap == null ? ToviTokens.sunken : ToviTokens.violetSoft, borderRadius: BorderRadius.circular(ToviTokens.radiusSm)),
+            child: Icon(icon, size: 20, color: onTap == null ? Tovi.muted : Tovi.violet),
+          ),
           const SizedBox(width: 12),
           Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: onTap == null ? Tovi.muted : Tovi.ink))),
           const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.muted),
