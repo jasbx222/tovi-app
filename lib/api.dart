@@ -12,10 +12,11 @@ class ApiException implements Exception {
 }
 
 class ToviApi {
-  ToviApi({required this.base, required this.token});
+  ToviApi({required this.base, required this.token, this.onUnauthorized});
 
   final String base;
   final String token;
+  final void Function()? onUnauthorized;
 
   Future<dynamic> get(String path) => _send('GET', path);
 
@@ -35,6 +36,7 @@ class ToviApi {
     final data = response.body.isEmpty ? null : jsonDecode(response.body);
     if (response.statusCode >= 400) {
       final map = data is Map ? data : const {};
+      if (response.statusCode == 401) onUnauthorized?.call();
       throw ApiException(response.statusCode, '${map['error'] ?? 'error'}', '${map['message'] ?? 'Request failed'}');
     }
     return data;

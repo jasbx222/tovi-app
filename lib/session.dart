@@ -17,8 +17,10 @@ class Session extends ChangeNotifier {
   static const base = String.fromEnvironment('API_URL', defaultValue: 'http://127.0.0.1:5088');
   static const buildEnvironment = String.fromEnvironment('TOVI_ENV', defaultValue: 'development');
 
+  var closing = false;
+
   Copy get copy => Copy(arabic);
-  ToviApi get api => ToviApi(base: base, token: token);
+  ToviApi get api => ToviApi(base: base, token: token, onUnauthorized: () => signOut(tellServer: false));
   bool get signedIn => token.isNotEmpty;
 
   Future<void> signIn(String value) async {
@@ -27,10 +29,19 @@ class Session extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> signOut() async {
+  Future<void> signOut({bool tellServer = true}) async {
+    if (closing) return;
+    closing = true;
+    final current = token;
     token = '';
     await prefs.remove('tovi-token');
     notifyListeners();
+    if (tellServer && current.isNotEmpty) {
+      try {
+        await ToviApi(base: base, token: current).post('/api/auth/logout');
+      } catch (_) {}
+    }
+    closing = false;
   }
 
   Future<void> toggleLanguage() async {

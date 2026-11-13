@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app.dart';
 import 'session.dart';
+import 'ui.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -19,20 +20,56 @@ class ToviStudentApp extends StatelessWidget {
     return AnimatedBuilder(
       animation: session,
       builder: (context, _) {
+        const ink = Tovi.ink;
         final theme = ThemeData(
           useMaterial3: true,
           fontFamily: 'IBM Plex Sans Arabic',
-          scaffoldBackgroundColor: const Color(0xFFF3EFE7),
-          colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF1F6B4A)).copyWith(
-            primary: const Color(0xFF1B1916),
-            secondary: const Color(0xFF1F6B4A),
-            surface: const Color(0xFFFFFDF9),
+          scaffoldBackgroundColor: Tovi.surface,
+          splashFactory: InkRipple.splashFactory,
+          colorScheme: const ColorScheme.light(
+            primary: Tovi.violet,
+            onPrimary: Colors.white,
+            secondary: Tovi.apricot,
+            surface: Tovi.surface,
+            error: Tovi.danger,
           ),
-          appBarTheme: const AppBarTheme(backgroundColor: Color(0xFFF3EFE7), foregroundColor: Color(0xFF1B1916), elevation: 0, scrolledUnderElevation: 0, centerTitle: false),
-          filledButtonTheme: FilledButtonThemeData(style: FilledButton.styleFrom(backgroundColor: const Color(0xFF1B1916), foregroundColor: const Color(0xFFF7F3EC), minimumSize: const Size.fromHeight(48), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)))),
-          inputDecorationTheme: InputDecorationTheme(filled: true, fillColor: Colors.white, border: OutlineInputBorder(borderRadius: BorderRadius.circular(14))),
+          appBarTheme: const AppBarTheme(
+            backgroundColor: Tovi.surface,
+            foregroundColor: ink,
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            surfaceTintColor: Colors.transparent,
+            centerTitle: true,
+          ),
+          dialogTheme: const DialogThemeData(
+            backgroundColor: Tovi.surface,
+            surfaceTintColor: Colors.transparent,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(24))),
+          ),
+          snackBarTheme: SnackBarThemeData(
+            behavior: SnackBarBehavior.floating,
+            backgroundColor: ink,
+            contentTextStyle: const TextStyle(fontFamily: 'IBM Plex Sans Arabic', color: Colors.white),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          ),
+          filledButtonTheme: FilledButtonThemeData(
+            style: FilledButton.styleFrom(
+              backgroundColor: ink,
+              foregroundColor: Colors.white,
+              minimumSize: const Size.fromHeight(54),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+              textStyle: const TextStyle(fontFamily: 'IBM Plex Sans Arabic', fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+          ),
+          textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(foregroundColor: Tovi.violet, textStyle: const TextStyle(fontFamily: 'IBM Plex Sans Arabic', fontWeight: FontWeight.w700))),
+          inputDecorationTheme: InputDecorationTheme(
+            filled: true,
+            fillColor: Tovi.field,
+            border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
+          ),
         );
         return MaterialApp(
+          key: ValueKey(session.signedIn),
           debugShowCheckedModeBanner: false,
           title: 'توفي',
           theme: theme,

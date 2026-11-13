@@ -2,11 +2,14 @@ import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api.dart';
+import 'copy.dart';
 import 'course_page.dart';
 import 'exam_page.dart';
 import 'meeting_page.dart';
 import 'push.dart';
+import 'redeem.dart';
 import 'session.dart';
+import 'student_rules.dart';
 import 'ui.dart';
 
 export 'auth.dart';
@@ -32,55 +35,405 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final copy = widget.session.copy;
     final pages = [
-      HomePage(session: widget.session),
-      SearchPage(session: widget.session),
+      HomePage(session: widget.session, onOpenSchedule: () => setState(() => index = 1), onOpenInbox: () => setState(() => index = 3)),
+      SchedulePage(session: widget.session),
       LearnPage(session: widget.session),
       InboxPage(session: widget.session),
       ProfilePage(session: widget.session),
     ];
-    final labels = [copy.home, copy.search, copy.learn, copy.inbox, copy.profile];
+    final tabs = [
+      ToviTab(Icons.home_rounded, copy.home),
+      ToviTab(Icons.calendar_month_rounded, copy.schedule),
+      ToviTab(Icons.auto_stories_rounded, copy.learn),
+      ToviTab(Icons.notifications_rounded, copy.inbox),
+      ToviTab(Icons.person_rounded, copy.profile),
+    ];
     final wide = MediaQuery.sizeOf(context).width >= 840;
     return Scaffold(
-      backgroundColor: Tovi.paper,
+      backgroundColor: Tovi.surface,
       body: SafeArea(
+        bottom: false,
         child: wide
-            ? Row(children: [
-                Container(
-                  width: 196,
-                  padding: const EdgeInsets.all(12),
-                  child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Padding(padding: const EdgeInsets.all(8), child: Text(widget.session.copy.brand, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700))),
-                    for (var i = 0; i < labels.length; i++)
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 6),
-                        child: FilledButton(
-                          style: FilledButton.styleFrom(backgroundColor: index == i ? Tovi.ink : Tovi.card, foregroundColor: index == i ? const Color(0xFFF6F1E7) : Tovi.ink),
-                          onPressed: () => setState(() => index = i),
-                          child: Text(labels[i]),
-                        ),
-                      ),
-                  ]),
-                ),
-                const VerticalDivider(width: 1),
-                Expanded(child: pages[index]),
-              ])
+            ? Row(
+                children: [
+                  _Rail(index: index, tabs: tabs, brand: copy.brand, onSelect: (value) => setState(() => index = value)),
+                  Expanded(child: pages[index]),
+                ],
+              )
             : pages[index],
       ),
-      bottomNavigationBar: wide ? null : ToviBar(index: index, labels: labels, onSelect: (value) => setState(() => index = value)),
+      bottomNavigationBar: wide ? null : ToviBar(index: index, tabs: tabs, onSelect: (value) => setState(() => index = value)),
+    );
+  }
+}
+
+class _Rail extends StatelessWidget {
+  const _Rail({required this.index, required this.tabs, required this.brand, required this.onSelect});
+  final int index;
+  final List<ToviTab> tabs;
+  final String brand;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 220,
+      margin: const EdgeInsets.fromLTRB(16, 12, 0, 16),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Tovi.surface, borderRadius: BorderRadius.circular(28), boxShadow: Tovi.shadow),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 18),
+            child: Row(children: [
+              const ToviMark(size: 40),
+              const SizedBox(width: 10),
+              Text(brand, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+            ]),
+          ),
+          for (var i = 0; i < tabs.length; i++)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 6),
+              child: Material(
+                color: index == i ? Tovi.lilac : Colors.transparent,
+                borderRadius: BorderRadius.circular(14),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => onSelect(i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                    child: Row(children: [
+                      Icon(tabs[i].icon, color: index == i ? Tovi.violet : Tovi.muted, size: 22),
+                      const SizedBox(width: 10),
+                      Text(tabs[i].label, style: TextStyle(fontWeight: FontWeight.w700, color: index == i ? Tovi.violet : Tovi.ink)),
+                    ]),
+                  ),
+                ),
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
 
 class HomePage extends StatefulWidget {
-  const HomePage({super.key, required this.session});
+  const HomePage({super.key, required this.session, required this.onOpenSchedule, required this.onOpenInbox});
   final Session session;
+  final VoidCallback onOpenSchedule;
+  final VoidCallback onOpenInbox;
+
   @override
   State<HomePage> createState() => _HomePageState();
 }
 
 class _HomePageState extends State<HomePage> {
   Map<String, dynamic>? data;
+  String name = '';
+  String notes = '—';
   String error = '';
+  List<Map<String, dynamic>> domains = [];
+  var loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    load();
+  }
+
+  Future<void> load() async {
+    final results = await Future.wait([
+      _guard(widget.session.api.get('/api/student/home')),
+      _guard(widget.session.api.get('/api/student/profile')),
+      _guard(widget.session.api.get('/api/student/notifications')),
+      _guard(widget.session.api.get('/api/student/learning-domains')),
+    ]);
+    if (!mounted) return;
+    final home = results[0];
+    if (home is ApiException) {
+      if (home.status == 401) await widget.session.signOut(tellServer: false);
+      setState(() { error = studentMessage(home.code, home.message, widget.session.copy.arabic); loading = false; });
+      return;
+    }
+    final profile = results[1];
+    final inbox = results[2];
+    var nextName = '';
+    if (profile is Map) {
+      final row = asMap(profile);
+      nextName = '${asText(row['firstName'])} ${asText(row['lastName'])}'.trim();
+    }
+    var nextNotes = '—';
+    if (inbox is Map) nextNotes = '${asMaps(asMap(inbox)['items']).length}';
+    setState(() {
+      data = asMap(home);
+      name = nextName;
+      notes = nextNotes;
+      domains = results[3] is List ? asMaps(results[3]) : [];
+      error = '';
+      loading = false;
+    });
+  }
+
+  Future<void> redeem() async {
+    final result = await askRedeem(context, widget.session);
+    if (!mounted || result == null) return;
+    await load();
+    if (!mounted) return;
+    final type = asText(result['targetType']);
+    final id = asText(result['targetId']);
+    if (type == 'Course') {
+      await Navigator.push(context, toviRoute(CoursePage(session: widget.session, id: id)));
+    } else if (type == 'Summary') {
+      await Navigator.push(context, toviRoute(SummaryPage(session: widget.session, id: id)));
+    } else if (type == 'Exam') {
+      await Navigator.push(context, toviRoute(ExamPage(session: widget.session, id: id)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final copy = widget.session.copy;
+    final courses = asMaps(data?['courses']);
+    final sessions = asMaps(data?['sessions']);
+    final ads = asMaps(data?['ads']);
+    final minutes = [for (final row in sessions) asInt(row['durationMinutes']).toDouble()];
+    final total = minutes.fold<int>(0, (sum, value) => sum + value.round());
+    final shown = name.isEmpty ? copy.brand : name;
+    return RefreshIndicator(
+      color: Tovi.violet,
+      onRefresh: load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 28),
+        children: [
+          _HomeHead(
+            name: shown,
+            role: copy.student,
+            inboxTip: copy.inbox,
+            notes: notes == '—' || notes == '0' ? null : notes,
+            onSearch: () => Navigator.push(context, toviRoute(SearchPage(session: widget.session))),
+            onInbox: widget.onOpenInbox,
+          ),
+          const SizedBox(height: 16),
+          _RedeemStrip(title: copy.redeem, hint: copy.pick('16 رقماً لكورس أو ملخص أو اختبار أو صف.', '16 digits for a course, summary, exam, or classroom.'), onTap: redeem),
+          if (error.isNotEmpty) ErrorNote(text: error, onRetry: load),
+          SectionHead(title: copy.pick('نشاطك', 'Your activity')),
+          if (loading)
+            const _HomeSkeleton()
+          else ...[
+            if (domains.isNotEmpty) ...[
+              SectionHead(title: copy.pick('المجالات', 'Domains')),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final row in domains)
+                  ActionChip(
+                    label: Text(asText(row['name'])),
+                    backgroundColor: Tovi.lilac,
+                    side: BorderSide.none,
+                    onPressed: () => Navigator.push(context, toviRoute(CatalogPage(session: widget.session, path: '/api/student/learning-domains', field: 'name', title: copy.pick('المجالات', 'Domains')))),
+                  ),
+              ]),
+            ],
+            Row(children: [
+              Expanded(child: StatPill(color: Tovi.blue, icon: Icons.menu_book_rounded, label: copy.pick('الدورات', 'Courses'), value: '${courses.length}')),
+              const SizedBox(width: 10),
+              Expanded(child: StatPill(color: Tovi.apricot, icon: Icons.event_rounded, label: copy.pick('الجلسات', 'Sessions'), value: '${sessions.length}')),
+              const SizedBox(width: 10),
+              Expanded(child: StatPill(color: Tovi.violet, icon: Icons.notifications_none_rounded, label: copy.inbox, value: notes)),
+            ]),
+            SectionHead(
+              title: copy.pick('دوراتي', 'My courses'),
+              action: courses.isEmpty ? null : copy.viewAll,
+              onAction: () => Navigator.push(context, toviRoute(CatalogPage(session: widget.session, path: '/api/student/courses', field: 'title', title: copy.pick('الدورات', 'Courses')))),
+            ),
+            if (courses.isEmpty)
+              EmptyNote(icon: Icons.menu_book_rounded, text: copy.empty)
+            else
+              SizedBox(
+                height: 176,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: courses.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, i) {
+                    final row = courses[i];
+                    final viewport = MediaQuery.sizeOf(context).width - 40;
+                    final width = courses.length == 1 ? viewport : (viewport - 12) / 2;
+                    return SizedBox(
+                      width: width,
+                      child: CoursePoster(
+                        title: asText(row['title']),
+                        meta: firstMeta(row, const ['teacherName', 'instructor', 'author']),
+                        color: Tovi.courses[i % Tovi.courses.length],
+                        onTap: () => Navigator.push(context, toviRoute(CoursePage(session: widget.session, id: asText(row['id'])))),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            if (sessions.isNotEmpty) ...[
+              SectionHead(title: copy.pick('وقت الجلسات', 'Session time'), action: copy.schedule, onAction: widget.onOpenSchedule),
+              Container(
+                padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+                decoration: BoxDecoration(color: Tovi.night, borderRadius: BorderRadius.circular(28)),
+                child: Column(
+                  children: [
+                    Row(children: [
+                      Expanded(child: Text(copy.pick('الدقائق المجدولة', 'Scheduled minutes'), style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.w700))),
+                      Text('$total ${copy.pick('د', 'min')}', style: TextStyle(color: Colors.white.withValues(alpha: 0.78), fontWeight: FontWeight.w700)),
+                    ]),
+                    const SizedBox(height: 8),
+                    SessionChart(values: minutes),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+              for (final row in sessions.take(2))
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: _SessionRow(
+                    row: row,
+                    copy: copy,
+                    onJoin: () => Navigator.push(context, toviRoute(MeetingPage(session: widget.session, sessionId: asText(row['id'])))),
+                  ),
+                ),
+            ],
+            if (ads.isNotEmpty) ...[
+              SectionHead(title: copy.pick('الإعلانات', 'Advertisements')),
+              for (final row in ads)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 10),
+                  child: SoftPanel(
+                    color: Tovi.lilac,
+                    onTap: asText(row['linkUrl']).isEmpty ? null : () => launchUrl(Uri.parse(asText(row['linkUrl']))),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(copy.pick('إعلان', 'Notice'), style: const TextStyle(color: Tovi.violet, fontSize: 12, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 4),
+                      Text(asText(row['title']), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                      if (asText(row['body']).isNotEmpty) Text(asText(row['body']), style: const TextStyle(color: Tovi.muted, height: 1.45)),
+                    ]),
+                  ),
+                ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HomeHead extends StatelessWidget {
+  const _HomeHead({required this.name, required this.role, required this.onSearch, required this.onInbox, this.notes, required this.inboxTip});
+  final String name;
+  final String role;
+  final String inboxTip;
+  final String? notes;
+  final VoidCallback onSearch;
+  final VoidCallback onInbox;
+
+  @override
+  Widget build(BuildContext context) {
+    final initial = name.isEmpty ? 'T' : name.substring(0, 1);
+    return Row(children: [
+      CircleAvatar(radius: 24, backgroundColor: Tovi.lilac, child: Text(initial, style: const TextStyle(color: Tovi.violet, fontWeight: FontWeight.w700, fontSize: 18))),
+      const SizedBox(width: 12),
+      Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        Text(role, style: const TextStyle(color: Tovi.muted, fontSize: 13)),
+      ])),
+      CircleButton(icon: Icons.search_rounded, tooltip: MaterialLocalizations.of(context).searchFieldLabel, onPressed: onSearch),
+      const SizedBox(width: 8),
+      CircleButton(icon: Icons.notifications_none_rounded, tooltip: inboxTip, badge: notes, onPressed: onInbox),
+    ]);
+  }
+}
+
+class _RedeemStrip extends StatelessWidget {
+  const _RedeemStrip({required this.title, required this.hint, required this.onTap});
+  final String title;
+  final String hint;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: const Color(0xFFFFF1E6),
+      borderRadius: BorderRadius.circular(22),
+      clipBehavior: Clip.antiAlias,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          child: Row(children: [
+            Container(width: 40, height: 40, alignment: Alignment.center, decoration: const BoxDecoration(color: Tovi.apricot, shape: BoxShape.circle), child: const Icon(Icons.vpn_key_rounded, color: Colors.white, size: 18)),
+            const SizedBox(width: 12),
+            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(title, style: const TextStyle(fontWeight: FontWeight.w700)),
+              Text(hint, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Tovi.muted, fontSize: 12, height: 1.35)),
+            ])),
+            const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.apricot),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+class _HomeSkeleton extends StatelessWidget {
+  const _HomeSkeleton();
+  @override
+  Widget build(BuildContext context) {
+    return const SkeletonFade(child: Column(children: [
+      Row(children: [Expanded(child: Bone(height: 112, radius: 22)), SizedBox(width: 10), Expanded(child: Bone(height: 112, radius: 22)), SizedBox(width: 10), Expanded(child: Bone(height: 112, radius: 22))]),
+      SizedBox(height: 18),
+      Bone(height: 176, radius: 26),
+    ]));
+  }
+}
+
+class _SessionRow extends StatelessWidget {
+  const _SessionRow({required this.row, required this.copy, required this.onJoin, this.color = Tovi.surface, this.light = false});
+  final Map<String, dynamic> row;
+  final Copy copy;
+  final VoidCallback onJoin;
+  final Color color;
+  final bool light;
+
+  @override
+  Widget build(BuildContext context) {
+    final when = asDate(row['startsAt']);
+    final title = firstMeta(row, const ['title', 'name', 'courseTitle']);
+    final headline = title.isEmpty ? (when == null ? asText(row['startsAt']) : _clock(when, copy.arabic)) : title;
+    final detail = '${asInt(row['durationMinutes'])} ${copy.pick('دقيقة', 'min')}';
+    final ink = light ? Colors.white : Tovi.ink;
+    final muted = light ? Colors.white.withValues(alpha: 0.8) : Tovi.muted;
+    return SoftPanel(
+      color: color,
+      onTap: onJoin,
+      child: Row(children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(headline, style: TextStyle(color: ink, fontWeight: FontWeight.w700, fontSize: 16)),
+          const SizedBox(height: 4),
+          Text(when == null ? detail : '${_clock(when, copy.arabic)} · $detail', style: TextStyle(color: muted, fontSize: 13)),
+        ])),
+        const SizedBox(width: 8),
+        Text(copy.meeting, style: TextStyle(color: light ? Colors.white : Tovi.violet, fontWeight: FontWeight.w700)),
+      ]),
+    );
+  }
+}
+
+class SchedulePage extends StatefulWidget {
+  const SchedulePage({super.key, required this.session});
+  final Session session;
+  @override
+  State<SchedulePage> createState() => _SchedulePageState();
+}
+
+class _SchedulePageState extends State<SchedulePage> {
+  List<Map<String, dynamic>> sessions = [];
+  String error = '';
+  var loading = true;
+  late DateTime selected = _dateOnly(DateTime.now());
 
   @override
   void initState() {
@@ -91,102 +444,182 @@ class _HomePageState extends State<HomePage> {
   Future<void> load() async {
     try {
       final value = await widget.session.api.get('/api/student/home');
-      if (mounted) setState(() { data = Map<String, dynamic>.from(value as Map); error = ''; });
+      if (!mounted) return;
+      setState(() { sessions = asMaps(asMap(value)['sessions']); error = ''; loading = false; });
     } on ApiException catch (reason) {
-      if (reason.status == 401) await widget.session.signOut();
-      if (mounted) setState(() => error = reason.message);
+      if (reason.status == 401) await widget.session.signOut(tellServer: false);
+      if (mounted) setState(() { error = studentMessage(reason.code, reason.message, widget.session.copy.arabic); loading = false; });
     }
   }
 
-  Future<void> redeem() async {
-    final code = TextEditingController();
-    final copy = widget.session.copy;
-    final entered = await showDialog<String>(
+  Future<void> pickDay() async {
+    final picked = await showDatePicker(
       context: context,
-      builder: (context) => AlertDialog(
-        title: Text(copy.redeem),
-        content: TextField(controller: code, decoration: InputDecoration(labelText: copy.code)),
-        actions: [TextButton(onPressed: () => Navigator.pop(context, code.text.trim()), child: Text(copy.pick('تفعيل', 'Redeem')))],
+      initialDate: selected,
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+      builder: (context, child) => Theme(
+        data: Theme.of(context).copyWith(colorScheme: Theme.of(context).colorScheme.copyWith(primary: Tovi.violet)),
+        child: child ?? const SizedBox.shrink(),
       ),
     );
-    if (entered == null || entered.isEmpty) return;
-    try {
-      await widget.session.api.post('/api/student/codes/redeem', {'code': entered});
-      await load();
-    } on ApiException catch (reason) {
-      if (mounted) setState(() => error = reason.message);
-    }
+    if (picked != null) setState(() => selected = _dateOnly(picked));
   }
 
   @override
   Widget build(BuildContext context) {
     final copy = widget.session.copy;
-    final courses = (data?['courses'] as List?) ?? const [];
-    final sessions = (data?['sessions'] as List?) ?? const [];
-    final ads = (data?['ads'] as List?) ?? const [];
+    final start = selected.subtract(Duration(days: selected.weekday % 7));
+    final days = [for (var i = 0; i < 7; i++) start.add(Duration(days: i))];
+    final dated = [for (final row in sessions) if (asDate(row['startsAt']) != null) row];
+    final undated = [for (final row in sessions) if (asDate(row['startsAt']) == null) row];
+    final todayRows = [for (final row in dated) if (_sameDay(asDate(row['startsAt'])!, selected)) row]..sort((a, b) => asDate(a['startsAt'])!.compareTo(asDate(b['startsAt'])!));
+    final weekMinutes = dated.where((row) => _sameWeek(asDate(row['startsAt'])!, start)).fold<int>(0, (sum, row) => sum + asInt(row['durationMinutes']));
+    final dayMinutes = todayRows.fold<int>(0, (sum, row) => sum + asInt(row['durationMinutes']));
+    final upcoming = dated.where((row) => asDate(row['startsAt'])!.isAfter(DateTime.now())).toList()
+      ..sort((a, b) => asDate(a['startsAt'])!.compareTo(asDate(b['startsAt'])!));
+    final next = upcoming.isNotEmpty ? upcoming.first : (todayRows.isNotEmpty ? todayRows.first : (sessions.isNotEmpty ? sessions.first : null));
     return RefreshIndicator(
+      color: Tovi.violet,
       onRefresh: load,
       child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
         children: [
-          Text(copy.pick('أهلاً بك', 'Welcome back'), style: const TextStyle(color: Tovi.muted)),
-          Text(copy.brand, style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -0.8)),
-          const SizedBox(height: 14),
-          SoftCard(
-            color: Tovi.claySoft,
-            onTap: redeem,
+          ToviHeader(title: copy.schedule, safe: false, action: CircleButton(icon: Icons.calendar_month_rounded, tooltip: copy.schedule, onPressed: pickDay)),
+          const SizedBox(height: 8),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [for (final day in days) _DayChip(day: day, selected: _sameDay(day, selected), arabic: copy.arabic, onTap: () => setState(() => selected = day))],
+          ),
+          const SizedBox(height: 16),
+          SoftPanel(
+            color: Tovi.lilac,
+            onTap: todayRows.isEmpty ? null : () => _join(todayRows.first),
             child: Row(children: [
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(copy.redeem, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-                Text(copy.pick('أدخل كود الدورة أو الملخص أو الاختبار أو القاعة.', 'Enter a course, summary, exam, or classroom code.'), style: const TextStyle(color: Tovi.muted)),
+                Text(copy.pick('جلسات اليوم', 'Today'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                const SizedBox(height: 4),
+                Text(
+                  todayRows.isEmpty
+                      ? copy.pick('لا جلسات في هذا اليوم.', 'No sessions on this day.')
+                      : '$dayMinutes ${copy.pick('د', 'min')}${weekMinutes > 0 ? ' / $weekMinutes' : ''}',
+                  style: const TextStyle(color: Tovi.muted),
+                ),
               ])),
-              const Icon(Icons.vpn_key_outlined, color: Tovi.clay),
+              if (todayRows.isNotEmpty)
+                Container(width: 36, height: 36, alignment: Alignment.center, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.violet)),
             ]),
           ),
-          if (error.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error, style: const TextStyle(color: Color(0xFFA33B32)))),
-          SectionLabel(copy.pick('دوراتي', 'My courses')),
-          if (courses.isEmpty) Text(copy.empty, style: const TextStyle(color: Tovi.muted)),
-          for (var i = 0; i < courses.length; i++)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: CourseTile(
-                index: i,
-                title: '${(courses[i] as Map)['title']}',
-                meta: '',
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CoursePage(session: widget.session, id: '${(courses[i] as Map)['id']}'))),
+          if (weekMinutes > 0 && dayMinutes > 0) ...[
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                minHeight: 8,
+                value: (dayMinutes / weekMinutes).clamp(0, 1).toDouble(),
+                backgroundColor: Tovi.lilac,
+                color: Tovi.violet,
               ),
             ),
-          SectionLabel(copy.pick('الجلسات القادمة', 'Upcoming sessions')),
-          for (final row in sessions)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: SoftCard(
-                child: Row(children: [
-                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('${(row as Map)['startsAt']}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                    Text('${row['durationMinutes']} ${copy.pick('دقيقة', 'min')}', style: const TextStyle(color: Tovi.muted)),
-                  ])),
-                  FilledButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => MeetingPage(session: widget.session, sessionId: '${row['id']}'))), child: Text(copy.meeting)),
-                ]),
+          ],
+          const SizedBox(height: 18),
+          Text(copy.pick('جدولي', 'My schedule'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 12),
+          if (loading) const SkeletonFade(child: Bone(height: 88, radius: 22))
+          else if (error.isNotEmpty) ErrorNote(text: error, onRetry: load)
+          else if (todayRows.isEmpty && undated.isEmpty) EmptyNote(icon: Icons.event_busy_rounded, text: copy.empty)
+          else ...[
+            for (var i = 0; i < todayRows.length; i++) ...[
+              if (i > 0) _gap(todayRows[i - 1], todayRows[i], copy),
+              Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                SizedBox(width: 72, child: Text(_clock(asDate(todayRows[i]['startsAt'])!, copy.arabic), style: const TextStyle(color: Tovi.muted, fontWeight: FontWeight.w700))),
+                Expanded(child: _SessionRow(row: todayRows[i], copy: copy, color: Tovi.courses[i % Tovi.courses.length], light: true, onJoin: () => _join(todayRows[i]))),
+              ]),
+              const SizedBox(height: 10),
+            ],
+            if (undated.isNotEmpty) ...[
+              Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text(copy.pick('بدون وقت محدد', 'No set time'), style: const TextStyle(color: Tovi.muted))),
+              for (final row in undated) Padding(padding: const EdgeInsets.only(bottom: 10), child: _SessionRow(row: row, copy: copy, onJoin: () => _join(row))),
+            ],
+          ],
+          if (next != null) ...[
+            const SizedBox(height: 8),
+            Material(
+              color: Tovi.ink,
+              borderRadius: BorderRadius.circular(22),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => _join(next),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                  child: Row(children: [
+                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(copy.nextUp, style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 12, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 2),
+                      Text(_nextLabel(next, copy), maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+                    ])),
+                    Container(width: 36, height: 36, alignment: Alignment.center, decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle), child: const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.ink)),
+                  ]),
+                ),
               ),
             ),
-          SectionLabel(copy.pick('الإعلانات', 'Advertisements')),
-          for (final row in ads)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: SoftCard(
-                color: Tovi.saffron,
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${(row as Map)['title']}', style: const TextStyle(fontWeight: FontWeight.w700)),
-                  Text('${row['body'] ?? ''}'),
-                ]),
-              ),
-            ),
+          ],
         ],
       ),
     );
   }
 
+  Widget _gap(Map<String, dynamic> previous, Map<String, dynamic> next, Copy copy) {
+    final start = asDate(previous['startsAt'])!;
+    final end = start.add(Duration(minutes: asInt(previous['durationMinutes'])));
+    final following = asDate(next['startsAt'])!;
+    if (!following.isAfter(end.add(const Duration(minutes: 15)))) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: Text(
+        copy.pick('لا جلسات من ${_clock(end, true)} إلى ${_clock(following, true)}', 'No sessions from ${_clock(end, false)} to ${_clock(following, false)}'),
+        textAlign: TextAlign.center,
+        style: const TextStyle(color: Tovi.muted, fontSize: 13),
+      ),
+    );
+  }
+
+  void _join(Map<String, dynamic> row) {
+    Navigator.push(context, toviRoute(MeetingPage(session: widget.session, sessionId: asText(row['id']))));
+  }
+}
+
+class _DayChip extends StatelessWidget {
+  const _DayChip({required this.day, required this.selected, required this.arabic, required this.onTap});
+  final DateTime day;
+  final bool selected;
+  final bool arabic;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    const ar = ['ن', 'ث', 'ر', 'خ', 'ج', 'س', 'ح'];
+    const en = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+    final letter = (arabic ? ar : en)[day.weekday - 1];
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: SizedBox(
+        width: 40,
+        child: Column(children: [
+          Text(letter, style: TextStyle(color: selected ? Tovi.violet : Tovi.muted, fontWeight: FontWeight.w700, fontSize: 12)),
+          const SizedBox(height: 6),
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: selected ? Tovi.violet : Colors.transparent, shape: BoxShape.circle),
+            child: Text('${day.day}', style: TextStyle(color: selected ? Colors.white : Tovi.ink, fontWeight: FontWeight.w700)),
+          ),
+        ]),
+      ),
+    );
+  }
 }
 
 class SearchPage extends StatefulWidget {
@@ -198,39 +631,65 @@ class SearchPage extends StatefulWidget {
 
 class _SearchPageState extends State<SearchPage> {
   final query = TextEditingController();
-  List<dynamic> items = [];
+  List<Map<String, dynamic>> items = [];
   String error = '';
+  var loading = false;
+  var searched = false;
+
+  @override
+  void dispose() {
+    query.dispose();
+    super.dispose();
+  }
 
   Future<void> run() async {
+    setState(() => loading = true);
     try {
       final page = await widget.session.api.get('/api/student/search?q=${Uri.encodeQueryComponent(query.text)}');
-      setState(() { items = (page['items'] as List?) ?? []; error = ''; });
+      if (!mounted) return;
+      setState(() { items = asMaps(asMap(page)['items']); error = ''; loading = false; searched = true; });
     } on ApiException catch (reason) {
-      setState(() => error = reason.message);
+      if (mounted) setState(() { error = studentMessage(reason.code, reason.message, widget.session.copy.arabic); loading = false; searched = true; });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(widget.session.copy.search, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        TextField(controller: query, decoration: toviField(widget.session.copy.search), onSubmitted: (_) => run()),
-        if (error.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 8), child: Text(error, style: const TextStyle(color: Color(0xFFA33B32)))),
-        const SizedBox(height: 12),
-        for (var i = 0; i < items.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: CourseTile(
-              index: i,
-              title: '${(items[i] as Map)['title']}',
-              meta: '',
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CoursePage(session: widget.session, id: '${(items[i] as Map)['id']}'))),
-            ),
+    final copy = widget.session.copy;
+    return Scaffold(
+      backgroundColor: Tovi.surface,
+      body: Column(children: [
+        ToviHeader(title: copy.search, onBack: () => Navigator.pop(context)),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 4, 20, 8),
+          child: TextField(controller: query, textInputAction: TextInputAction.search, decoration: toviField('', hint: copy.search, icon: Icons.search_rounded), onSubmitted: (_) => run()),
+        ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            children: [
+              if (loading) const SkeletonFade(child: Bone(height: 168, radius: 26))
+              else if (error.isNotEmpty) ErrorNote(text: error, onRetry: run)
+              else if (!searched) EmptyNote(icon: Icons.search_rounded, text: copy.pick('اكتب اسم دورة.', 'Type a course name.'))
+              else if (items.isEmpty) EmptyNote(icon: Icons.search_off_rounded, text: copy.empty)
+              else
+                for (var i = 0; i < items.length; i++)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: SizedBox(
+                      height: 168,
+                      child: CoursePoster(
+                        title: asText(items[i]['title']),
+                        meta: firstMeta(items[i], const ['teacherName', 'instructor']),
+                        color: Tovi.courses[i % Tovi.courses.length],
+                        onTap: () => Navigator.push(context, toviRoute(CoursePage(session: widget.session, id: asText(items[i]['id'])))),
+                      ),
+                    ),
+                  ),
+            ],
           ),
-      ],
+        ),
+      ]),
     );
   }
 }
@@ -243,33 +702,51 @@ class LearnPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final copy = session.copy;
     final links = [
-      ('/api/student/learning-domains', 'name', copy.pick('المجالات', 'Domains')),
-      ('/api/student/sections', 'name', copy.pick('الأقسام', 'Sections')),
-      ('/api/student/grades', 'name', copy.pick('المراحل', 'Grades')),
-      ('/api/student/subjects', 'name', copy.pick('المواد', 'Subjects')),
-      ('/api/student/governorates', 'name', copy.pick('المحافظات', 'Governorates')),
-      ('/api/student/teachers', 'firstName', copy.pick('المعلمون', 'Teachers')),
-      ('/api/student/institutes', 'instituteName', copy.pick('المعاهد', 'Institutes')),
-      ('/api/student/courses', 'title', copy.pick('الدورات', 'Courses')),
-      ('/api/student/summaries', 'title', copy.pick('الملخصات', 'Summaries')),
+      ('/api/student/learning-domains', 'name', copy.pick('المجالات', 'Domains'), Icons.category_rounded),
+      ('/api/student/sections', 'name', copy.pick('الأقسام', 'Sections'), Icons.account_tree_rounded),
+      ('/api/student/grades', 'name', copy.pick('المراحل', 'Grades'), Icons.school_rounded),
+      ('/api/student/subjects', 'name', copy.pick('المواد', 'Subjects'), Icons.menu_book_rounded),
+      ('/api/student/governorates', 'name', copy.pick('المحافظات', 'Governorates'), Icons.location_on_rounded),
+      ('/api/student/teachers', 'firstName', copy.pick('المعلمون', 'Teachers'), Icons.person_rounded),
+      ('/api/student/institutes', 'instituteName', copy.pick('المعاهد', 'Institutes'), Icons.apartment_rounded),
+      ('/api/student/courses', 'title', copy.pick('الدورات', 'Courses'), Icons.play_lesson_rounded),
+      ('/api/student/summaries', 'title', copy.pick('الملخصات', 'Summaries'), Icons.description_rounded),
     ];
     return ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
       children: [
         Text(copy.pick('اكتشف', 'Discover'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        for (var i = 0; i < links.length; i++)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: SoftCard(
-              color: i.isEven ? Tovi.card : Tovi.saffron,
-              onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CatalogPage(session: session, path: links[i].$1, field: links[i].$2, title: links[i].$3))),
-              child: Row(children: [
-                Expanded(child: Text(links[i].$3, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
-                const Icon(Icons.chevron_left, color: Tovi.muted),
-              ]),
-            ),
-          ),
+        const SizedBox(height: 6),
+        Text(copy.pick('المجالات والدورات والملخصات.', 'Domains, courses, and summaries.'), style: const TextStyle(color: Tovi.muted)),
+        const SizedBox(height: 16),
+        LayoutBuilder(builder: (context, constraints) {
+          final columns = constraints.maxWidth >= 720 ? 3 : 2;
+          return GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: links.length,
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 12, crossAxisSpacing: 12, childAspectRatio: 1.35),
+            itemBuilder: (context, i) {
+              final link = links[i];
+              return Material(
+                color: Tovi.courses[i % Tovi.courses.length],
+                borderRadius: BorderRadius.circular(24),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => Navigator.push(context, toviRoute(CatalogPage(session: session, path: link.$1, field: link.$2, title: link.$3))),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Icon(link.$4, color: Colors.white, size: 26),
+                      const Spacer(),
+                      Text(link.$3, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 16)),
+                    ]),
+                  ),
+                ),
+              );
+            },
+          );
+        }),
       ],
     );
   }
@@ -286,61 +763,138 @@ class CatalogPage extends StatefulWidget {
 }
 
 class _CatalogPageState extends State<CatalogPage> {
-  List<dynamic> items = [];
+  List<Map<String, dynamic>> items = [];
+  List<Map<String, dynamic>> grades = [];
+  List<Map<String, dynamic>> subjects = [];
+  String? gradeId;
+  String? subjectId;
   String error = '';
+  var loading = true;
+
+  bool get courses => widget.path.endsWith('/courses');
 
   @override
   void initState() {
     super.initState();
     load();
+    if (courses) loadFilters();
+  }
+
+  Future<void> loadFilters() async {
+    final loadedGrades = await _guard(widget.session.api.get('/api/student/grades'));
+    final loadedSubjects = await _guard(widget.session.api.get('/api/student/subjects'));
+    if (!mounted) return;
+    setState(() {
+      grades = loadedGrades is List ? asMaps(loadedGrades) : [];
+      subjects = loadedSubjects is List ? asMaps(loadedSubjects) : [];
+    });
   }
 
   Future<void> load() async {
     try {
-      final data = await widget.session.api.get(widget.path);
-      setState(() => items = data is List ? data : (data['items'] as List? ?? []));
+      final data = await widget.session.api.get(_path());
+      if (!mounted) return;
+      setState(() { items = data is List ? asMaps(data) : asMaps(asMap(data)['items']); error = ''; loading = false; });
     } on ApiException catch (reason) {
-      setState(() => error = reason.message);
+      if (mounted) setState(() { error = studentMessage(reason.code, reason.message, widget.session.copy.arabic); loading = false; });
     }
   }
+
+  String _path() {
+    if (!courses) return widget.path;
+    final query = <String>[
+      if (gradeId != null) 'gradeId=$gradeId',
+      if (subjectId != null) 'subjectId=$subjectId',
+    ];
+    if (query.isEmpty) return widget.path;
+    return '${widget.path}?${query.join('&')}';
+  }
+
+  bool get _poster => widget.path.endsWith('/courses') || widget.path.endsWith('/summaries');
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(widget.title)),
-      body: error.isNotEmpty
-          ? Center(child: Text(error))
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if (items.isEmpty) Text(widget.session.copy.empty, style: const TextStyle(color: Tovi.muted)),
-                for (var i = 0; i < items.length; i++)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: CourseTile(
-                      index: i,
-                      title: '${(items[i] as Map)[widget.field] ?? (items[i] as Map)['title'] ?? (items[i] as Map)['name'] ?? ''}',
-                      meta: '',
-                      onTap: () => open(Map<String, dynamic>.from(items[i] as Map)),
+      backgroundColor: Tovi.surface,
+      body: Column(children: [
+        ToviHeader(title: widget.title, onBack: () => Navigator.pop(context)),
+        Expanded(
+          child: loading
+              ? const Padding(padding: EdgeInsets.all(20), child: SkeletonFade(child: Bone(height: 168, radius: 26)))
+              : error.isNotEmpty
+                  ? ErrorNote(text: error, onRetry: load)
+                  : ListView(
+                      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+                      children: [
+                        if (courses) ...[
+                          _FilterMenu(
+                            label: widget.session.copy.pick('المرحلة', 'Grade'),
+                            value: gradeId,
+                            rows: grades,
+                            onChanged: (value) { setState(() => gradeId = value); load(); },
+                          ),
+                          const SizedBox(height: 8),
+                          _FilterMenu(
+                            label: widget.session.copy.pick('المادة', 'Subject'),
+                            value: subjectId,
+                            rows: subjects,
+                            onChanged: (value) { setState(() => subjectId = value); load(); },
+                          ),
+                          const SizedBox(height: 12),
+                        ],
+                        if (items.isEmpty) EmptyNote(icon: Icons.inbox_rounded, text: widget.session.copy.empty),
+                        if (_poster)
+                          for (var i = 0; i < items.length; i++)
+                            Padding(
+                              padding: const EdgeInsets.only(bottom: 12),
+                              child: SizedBox(height: 168, child: CoursePoster(title: _label(items[i]), color: Tovi.courses[i % Tovi.courses.length], onTap: () => open(items[i]))),
+                            )
+                        else
+                          for (var i = 0; i < items.length; i++)
+                            Padding(padding: const EdgeInsets.only(bottom: 10), child: _catalogRow(items[i], i)),
+                      ],
                     ),
-                  ),
-              ],
-            ),
+        ),
+      ]),
     );
   }
 
+  Widget _catalogRow(Map<String, dynamic> row, int index) {
+    final teacher = widget.path.endsWith('/teachers');
+    return SoftPanel(
+      onTap: teacher ? () => open(row) : null,
+      child: Row(children: [
+        CircleAvatar(backgroundColor: Tovi.courses[index % Tovi.courses.length], child: Text(_label(row).isEmpty ? 'T' : _label(row).substring(0, 1), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700))),
+        const SizedBox(width: 12),
+        Expanded(child: Text(_label(row), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16))),
+        if (teacher) Text(widget.session.copy.pick('متابعة', 'Follow'), style: const TextStyle(color: Tovi.violet, fontWeight: FontWeight.w700)),
+      ]),
+    );
+  }
+
+  String _label(Map<String, dynamic> row) {
+    final named = asText(row[widget.field]);
+    if (named.isNotEmpty) return named;
+    final fallback = firstMeta(row, const ['title', 'name', 'instituteName', 'firstName']);
+    if (widget.path.endsWith('/teachers')) {
+      final last = asText(row['lastName']);
+      return '$fallback $last'.trim();
+    }
+    return fallback;
+  }
+
   Future<void> open(Map<String, dynamic> row) async {
-    final id = '${row['id']}';
+    final id = asText(row['id']);
     if (widget.path.endsWith('/courses')) {
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => CoursePage(session: widget.session, id: id)));
+      await Navigator.push(context, toviRoute(CoursePage(session: widget.session, id: id)));
     } else if (widget.path.endsWith('/summaries')) {
-      await Navigator.push(context, MaterialPageRoute(builder: (_) => SummaryPage(session: widget.session, id: id)));
+      await Navigator.push(context, toviRoute(SummaryPage(session: widget.session, id: id)));
     } else if (widget.path.endsWith('/teachers')) {
       try {
         await widget.session.api.post('/api/student/teachers/$id/follow');
         if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(widget.session.copy.pick('تمت المتابعة', 'Following'))));
       } on ApiException catch (reason) {
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(reason.message)));
+        if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(studentMessage(reason.code, reason.message, widget.session.copy.arabic))));
       }
     }
   }
@@ -357,25 +911,40 @@ class SummaryPage extends StatefulWidget {
 class _SummaryPageState extends State<SummaryPage> {
   Map<String, dynamic>? data;
   String error = '';
+  var loading = true;
+
   @override
   void initState() { super.initState(); load(); }
+
   Future<void> load() async {
     try {
-      final value = Map<String, dynamic>.from(await widget.session.api.get('/api/student/summaries/${widget.id}') as Map);
-      if (mounted) setState(() => data = value);
+      final value = asMap(await widget.session.api.get('/api/student/summaries/${widget.id}'));
+      if (mounted) setState(() { data = value; error = ''; loading = false; });
     } on ApiException catch (reason) {
-      if (mounted) setState(() => error = reason.message);
+      if (mounted) setState(() { error = studentMessage(reason.code, reason.message, widget.session.copy.arabic); loading = false; });
     }
   }
+
   @override
   Widget build(BuildContext context) {
-    final body = data?['body'];
+    final copy = widget.session.copy;
+    final body = asText(data?['body']);
     return Scaffold(
-      appBar: AppBar(title: Text('${data?['title'] ?? ''}')),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: SoftCard(child: Text(error.isNotEmpty ? error : (body == null ? widget.session.copy.pick('فعّل كود الملخص لقراءة النص', 'Redeem a summary code to read it') : '$body'), style: const TextStyle(height: 1.7, fontSize: 16))),
-      ),
+      backgroundColor: Tovi.surface,
+      body: Column(children: [
+        ToviHeader(title: asText(data?['title']).isEmpty ? copy.pick('الملخص', 'Summary') : asText(data?['title']), onBack: () => Navigator.pop(context)),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+            children: [
+              if (loading) const SkeletonFade(child: Bone(height: 180, radius: 24))
+              else if (error.isNotEmpty) ErrorNote(text: error, onRetry: load)
+              else if (body.isEmpty) EmptyNote(icon: Icons.lock_rounded, text: copy.pick('فعّل كود الملخص لقراءة النص.', 'Redeem a summary code to read it.'))
+              else SoftPanel(child: Text(body, style: const TextStyle(fontSize: 17, height: 1.8))),
+            ],
+          ),
+        ),
+      ]),
     );
   }
 }
@@ -388,36 +957,51 @@ class InboxPage extends StatefulWidget {
 }
 
 class _InboxPageState extends State<InboxPage> {
-  List<dynamic> items = [];
+  List<Map<String, dynamic>> items = [];
   String error = '';
+  var loading = true;
+
   @override
   void initState() { super.initState(); load(); }
+
   Future<void> load() async {
     try {
       final page = await widget.session.api.get('/api/student/notifications');
-      if (mounted) setState(() => items = (page['items'] as List?) ?? []);
+      if (mounted) setState(() { items = asMaps(asMap(page)['items']); error = ''; loading = false; });
     } on ApiException catch (reason) {
-      if (mounted) setState(() => error = reason.message);
+      if (mounted) setState(() { error = studentMessage(reason.code, reason.message, widget.session.copy.arabic); loading = false; });
     }
   }
+
   @override
   Widget build(BuildContext context) {
-    if (error.isNotEmpty) return Center(child: Text(error));
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(widget.session.copy.pick('الإشعارات', 'Notifications'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        if (items.isEmpty) Text(widget.session.copy.empty, style: const TextStyle(color: Tovi.muted)),
-        for (final row in items)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: SoftCard(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${(row as Map)['title']}', style: const TextStyle(fontWeight: FontWeight.w700)),
-              Text('${row['body'] ?? ''}', style: const TextStyle(color: Tovi.muted)),
-            ])),
-          ),
-      ],
+    final copy = widget.session.copy;
+    return RefreshIndicator(
+      color: Tovi.violet,
+      onRefresh: load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        children: [
+          Text(copy.inbox, style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          if (loading) const SkeletonFade(child: Bone(height: 88, radius: 22))
+          else if (error.isNotEmpty) ErrorNote(text: error, onRetry: load)
+          else if (items.isEmpty) EmptyNote(icon: Icons.notifications_none_rounded, text: copy.empty)
+          else
+            for (final row in items)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 10),
+                child: SoftPanel(child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Container(width: 10, height: 10, margin: const EdgeInsets.only(top: 6), decoration: const BoxDecoration(color: Tovi.violet, shape: BoxShape.circle)),
+                  const SizedBox(width: 12),
+                  Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                    Text(asText(row['title']), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                    if (asText(row['body']).isNotEmpty) Text(asText(row['body']), style: const TextStyle(color: Tovi.muted, height: 1.45)),
+                  ])),
+                ])),
+              ),
+        ],
+      ),
     );
   }
 }
@@ -433,6 +1017,7 @@ class _ProfilePageState extends State<ProfilePage> {
   Map<String, dynamic>? profile;
   String privacy = '';
   String error = '';
+  var loading = true;
 
   @override
   void initState() { super.initState(); load(); }
@@ -441,44 +1026,121 @@ class _ProfilePageState extends State<ProfilePage> {
     try {
       final me = await widget.session.api.get('/api/student/profile');
       final parameters = await widget.session.api.get('/api/student/parameters');
-      String link = '';
+      var link = '';
       if (parameters is List) {
         for (final row in parameters) {
-          if (row is Map && row['key'] == 'privacy_url') link = '${row['value']}';
+          final map = asMap(row);
+          if (map['key'] == 'privacy_url') link = asText(map['value']);
         }
       }
-      setState(() { profile = Map<String, dynamic>.from(me as Map); privacy = link; });
-    } on ApiException catch (reason) { setState(() => error = reason.message); }
+      if (mounted) setState(() { profile = asMap(me); privacy = link; error = ''; loading = false; });
+    } on ApiException catch (reason) {
+      if (mounted) setState(() { error = studentMessage(reason.code, reason.message, widget.session.copy.arabic); loading = false; });
+    }
+  }
+
+  Future<void> confirmSignOut() async {
+    final copy = widget.session.copy;
+    final yes = await showToviSheet<bool>(
+      context,
+      (context) => Padding(
+        padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          const SheetHandle(),
+          Text(copy.pick('تسجيل الخروج؟', 'Sign out?'), style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 14),
+          ToviButton(label: copy.pick('خروج', 'Sign out'), color: Tovi.danger, onPressed: () => Navigator.pop(context, true)),
+          TextButton(onPressed: () => Navigator.pop(context, false), child: Text(copy.pick('إلغاء', 'Cancel'))),
+        ]),
+      ),
+    );
+    if (yes == true) await widget.session.signOut();
   }
 
   @override
   Widget build(BuildContext context) {
     final copy = widget.session.copy;
-    return ListView(
-      padding: const EdgeInsets.all(16),
-      children: [
-        Text(copy.pick('حسابي', 'My account'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
-        const SizedBox(height: 12),
-        SoftCard(
-          color: Tovi.brandSoft,
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${profile?['firstName'] ?? ''} ${profile?['lastName'] ?? ''}', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-            Text('${profile?['phone'] ?? ''}', style: const TextStyle(color: Tovi.muted)),
-          ]),
-        ),
-        if (error.isNotEmpty) Text(error),
-        const SizedBox(height: 12),
-        SoftCard(onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExamEntry(session: widget.session))), child: Text(copy.pick('فتح اختبار', 'Open an exam'), style: const TextStyle(fontWeight: FontWeight.w700))),
-        const SizedBox(height: 8),
-        SoftCard(onTap: widget.session.toggleLanguage, child: Text(copy.pick('English', 'العربية'), style: const TextStyle(fontWeight: FontWeight.w700))),
-        const SizedBox(height: 8),
-        SoftCard(
-          onTap: privacy.isEmpty ? null : () => launchUrl(Uri.parse(privacy.startsWith('http') ? privacy : '${Session.base}$privacy')),
-          child: Text(copy.privacy, style: const TextStyle(fontWeight: FontWeight.w700)),
-        ),
-        const SizedBox(height: 8),
-        SoftCard(onTap: widget.session.signOut, child: Text(copy.pick('خروج', 'Sign out'), style: const TextStyle(fontWeight: FontWeight.w700, color: Color(0xFFA33B32)))),
+    final full = '${asText(profile?['firstName'])} ${asText(profile?['lastName'])}'.trim();
+    return RefreshIndicator(
+      color: Tovi.violet,
+      onRefresh: load,
+      child: ListView(
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
+        children: [
+          Text(copy.pick('حسابي', 'My account'), style: const TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
+          const SizedBox(height: 16),
+          if (loading) const SkeletonFade(child: Bone(height: 96, radius: 24))
+          else ...[
+            if (error.isNotEmpty) ErrorNote(text: error, onRetry: load),
+            SoftPanel(color: Tovi.lilac, child: Row(children: [
+              CircleAvatar(radius: 28, backgroundColor: Tovi.violet, child: Text(full.isEmpty ? 'T' : full.substring(0, 1), style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, fontSize: 20))),
+              const SizedBox(width: 14),
+              Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(full.isEmpty ? copy.brand : full, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700)),
+                Text(asText(profile?['phone']), style: const TextStyle(color: Tovi.muted)),
+              ])),
+            ])),
+            const SizedBox(height: 14),
+            SoftPanel(padding: EdgeInsets.zero, child: Column(children: [
+              _ProfileAction(icon: Icons.quiz_rounded, label: copy.pick('فتح اختبار', 'Open an exam'), onTap: () => Navigator.push(context, toviRoute(ExamEntry(session: widget.session)))),
+              const Divider(height: 1, color: Tovi.line),
+              _ProfileAction(icon: Icons.language_rounded, label: copy.pick('English', 'العربية'), onTap: widget.session.toggleLanguage),
+              const Divider(height: 1, color: Tovi.line),
+              _ProfileAction(
+                icon: Icons.privacy_tip_rounded,
+                label: copy.privacy,
+                onTap: privacy.isEmpty ? null : () => launchUrl(Uri.parse(privacy.startsWith('http') ? privacy : '${Session.base}$privacy')),
+              ),
+            ])),
+            const SizedBox(height: 14),
+            SoftPanel(onTap: confirmSignOut, child: Text(copy.pick('خروج', 'Sign out'), style: const TextStyle(fontWeight: FontWeight.w700, color: Tovi.danger))),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _FilterMenu extends StatelessWidget {
+  const _FilterMenu({required this.label, required this.value, required this.rows, required this.onChanged});
+  final String label;
+  final String? value;
+  final List<Map<String, dynamic>> rows;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return DropdownButtonFormField<String?>(
+      initialValue: value,
+      decoration: toviField(label),
+      items: [
+        DropdownMenuItem<String?>(value: null, child: Text(label)),
+        for (final row in rows) DropdownMenuItem<String?>(value: asText(row['id']), child: Text(asText(row['name']))),
       ],
+      onChanged: onChanged,
+    );
+  }
+}
+
+class _ProfileAction extends StatelessWidget {
+  const _ProfileAction({required this.icon, required this.label, required this.onTap});
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        child: Row(children: [
+          Icon(icon, color: onTap == null ? Tovi.muted : Tovi.violet),
+          const SizedBox(width: 12),
+          Expanded(child: Text(label, style: TextStyle(fontWeight: FontWeight.w700, color: onTap == null ? Tovi.muted : Tovi.ink))),
+          const Icon(Icons.arrow_forward_ios_rounded, size: 14, color: Tovi.muted),
+        ]),
+      ),
     );
   }
 }
@@ -493,17 +1155,53 @@ class ExamEntry extends StatefulWidget {
 class _ExamEntryState extends State<ExamEntry> {
   final id = TextEditingController();
   @override
+  void dispose() { id.dispose(); super.dispose(); }
+
+  @override
   Widget build(BuildContext context) {
+    final copy = widget.session.copy;
     return Scaffold(
-      appBar: AppBar(title: Text(widget.session.copy.pick('فتح اختبار', 'Open an exam'))),
-      body: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(children: [
-          TextField(controller: id, decoration: toviField(widget.session.copy.pick('معرف الاختبار', 'Exam id'))),
-          const SizedBox(height: 12),
-          FilledButton(onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => ExamPage(session: widget.session, id: id.text.trim()))), child: Text(widget.session.copy.pick('متابعة', 'Continue'))),
-        ]),
-      ),
+      backgroundColor: Tovi.surface,
+      body: Column(children: [
+        ToviHeader(title: copy.pick('فتح اختبار', 'Open an exam'), onBack: () => Navigator.pop(context)),
+        Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(children: [
+            TextField(controller: id, decoration: toviField(copy.pick('معرف الاختبار', 'Exam id'))),
+            const SizedBox(height: 14),
+            ToviButton(label: copy.pick('متابعة', 'Continue'), onPressed: () => Navigator.push(context, toviRoute(ExamPage(session: widget.session, id: id.text.trim())))),
+          ]),
+        ),
+      ]),
     );
   }
+}
+
+Future<Object?> _guard(Future<dynamic> call) async {
+  try { return await call; } on ApiException catch (reason) { return reason; }
+}
+
+DateTime _dateOnly(DateTime value) => DateTime(value.year, value.month, value.day);
+
+bool _sameDay(DateTime a, DateTime b) => a.year == b.year && a.month == b.month && a.day == b.day;
+
+bool _sameWeek(DateTime value, DateTime start) {
+  final day = _dateOnly(value);
+  return !day.isBefore(start) && day.isBefore(start.add(const Duration(days: 7)));
+}
+
+String _clock(DateTime value, bool arabic) {
+  final hour = value.hour % 12 == 0 ? 12 : value.hour % 12;
+  final minute = value.minute.toString().padLeft(2, '0');
+  final suffix = value.hour < 12 ? (arabic ? 'ص' : 'am') : (arabic ? 'م' : 'pm');
+  return '$hour:$minute $suffix';
+}
+
+String _nextLabel(Map<String, dynamic> row, Copy copy) {
+  final title = firstMeta(row, const ['title', 'name', 'courseTitle']);
+  final when = asDate(row['startsAt']);
+  if (title.isNotEmpty && when != null) return '$title · ${_clock(when, copy.arabic)}';
+  if (title.isNotEmpty) return title;
+  if (when != null) return _clock(when, copy.arabic);
+  return asText(row['startsAt']);
 }
