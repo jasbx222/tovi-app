@@ -31,6 +31,18 @@ String studentMessage(String code, String fallback, bool arabic) {
       return both('الصف خارج نافذة الوقت.', 'The session is outside its time window.');
     case 'session_dead':
       return both('انتهت الجلسة.', 'The session has ended.');
+    case 'reaction_too_fast':
+      return both('على كيفك، جرّب بعد لحظة.', 'Easy, try again in a moment.');
+    case 'question_length':
+      return both('السؤال لازم يكون بين حرف و300 حرف.', 'A question must be 1 to 300 characters.');
+    case 'markup_rejected':
+      return both('النص فيه رموز غير مسموحة.', 'The text contains characters that are not allowed.');
+    case 'own_question':
+      return both('ما تكدر تصوّت على سؤالك.', 'You cannot upvote your own question.');
+    case 'poll_closed':
+      return both('هذا التصويت انغلق.', 'This poll is closed.');
+    case 'poll_voted':
+      return both('صوّتت قبل على هذا السؤال.', 'You already voted in this poll.');
     case 'invalid_login':
       return both('الجوال أو كلمة المرور خطأ، أو الحساب موقوف.', 'The phone or password is wrong, or the account is disabled.');
     case 'phone_invalid':

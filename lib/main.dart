@@ -24,7 +24,7 @@ class ToviStudentApp extends StatelessWidget {
         final theme = ThemeData(
           useMaterial3: true,
           fontFamily: 'IBM Plex Sans Arabic',
-          scaffoldBackgroundColor: Tovi.surface,
+          scaffoldBackgroundColor: Tovi.page,
           splashFactory: InkRipple.splashFactory,
           colorScheme: const ColorScheme.light(
             primary: Tovi.violet,
@@ -34,7 +34,7 @@ class ToviStudentApp extends StatelessWidget {
             error: Tovi.danger,
           ),
           appBarTheme: const AppBarTheme(
-            backgroundColor: Tovi.surface,
+            backgroundColor: Tovi.page,
             foregroundColor: ink,
             elevation: 0,
             scrolledUnderElevation: 0,
@@ -54,7 +54,7 @@ class ToviStudentApp extends StatelessWidget {
           ),
           filledButtonTheme: FilledButtonThemeData(
             style: FilledButton.styleFrom(
-              backgroundColor: ink,
+              backgroundColor: Tovi.violet,
               foregroundColor: Colors.white,
               minimumSize: const Size.fromHeight(54),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),

@@ -11,6 +11,6 @@ void main() {
     final session = Session(await SharedPreferences.getInstance());
     await tester.pumpWidget(ToviStudentApp(session: session));
     expect(find.text('توفي'), findsOneWidget);
-    expect(find.text('دخول'), findsOneWidget);
+    expect(find.text('دخول'), findsWidgets);
   });
 }

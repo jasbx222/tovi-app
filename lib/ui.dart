@@ -1,32 +1,37 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'tokens.dart';
+
+export 'tokens.dart';
+
 class Tovi {
-  static const canvas = Color(0xFF6C5CE7);
-  static const canvasDeep = Color(0xFF5846D6);
-  static const ink = Color(0xFF1B1730);
-  static const muted = Color(0xFF6F6A86);
-  static const line = Color(0xFFEEEAF6);
-  static const surface = Color(0xFFFFFFFF);
-  static const lilac = Color(0xFFF3F0FF);
-  static const field = Color(0xFFF4F2FB);
-  static const blue = Color(0xFF3E7BFA);
-  static const apricot = Color(0xFFFF8A3C);
-  static const violet = Color(0xFF6C5CE7);
-  static const night = Color(0xFF171422);
-  static const danger = Color(0xFFD94B5A);
-  static const ok = Color(0xFF0E8F6B);
+  static const canvas = ToviTokens.violet;
+  static const canvasDeep = ToviTokens.violetDeep;
+  static const ink = ToviTokens.ink;
+  static const muted = ToviTokens.muted;
+  static const line = ToviTokens.sunken;
+  static const surface = ToviTokens.surface;
+  static const page = ToviTokens.page;
+  static const lilac = ToviTokens.violetSoft;
+  static const field = ToviTokens.sunken;
+  static const blue = ToviTokens.sky;
+  static const apricot = ToviTokens.coral;
+  static const violet = ToviTokens.violet;
+  static const sun = ToviTokens.sun;
+  static const coral = ToviTokens.coral;
+  static const night = ToviTokens.night;
+  static const danger = ToviTokens.danger;
+  static const ok = ToviTokens.mint;
 
   static const courses = <Color>[
-    Color(0xFFFF9B45),
-    Color(0xFF7D8CFF),
-    Color(0xFF6C5CE7),
-    Color(0xFF2F9E8F),
-    Color(0xFFE06A6A),
+    ToviTokens.violet,
+    Color(0xFF2F7DF6),
+    Color(0xFFF06A4F),
+    Color(0xFF0F9A78),
+    Color(0xFFB5468F),
   ];
 
-  static const shadow = <BoxShadow>[
-    BoxShadow(color: Color(0x121B1730), blurRadius: 24, offset: Offset(0, 10)),
-  ];
+  static const shadow = ToviTokens.raised;
 }
 
 class ToviMark extends StatelessWidget {
@@ -37,23 +42,26 @@ class ToviMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: size,
       height: size,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: onViolet ? Colors.white : Tovi.violet,
-        borderRadius: BorderRadius.circular(size * 0.32),
-      ),
-      child: Text(
-        'T',
-        style: TextStyle(
-          color: onViolet ? Tovi.violet : Colors.white,
-          fontWeight: FontWeight.w700,
-          fontSize: size * 0.46,
-          height: 1,
+      child: Stack(clipBehavior: Clip.none, children: [
+        Container(
+          width: size,
+          height: size,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(color: onViolet ? Colors.white : Tovi.violet, shape: BoxShape.circle),
+          child: Text(
+            'T',
+            style: TextStyle(color: onViolet ? Tovi.violet : Colors.white, fontWeight: FontWeight.w700, fontSize: size * 0.46, height: 1),
+          ),
         ),
-      ),
+        PositionedDirectional(
+          top: size * 0.02,
+          end: size * 0.02,
+          child: Container(width: size * 0.22, height: size * 0.22, decoration: const BoxDecoration(color: ToviTokens.sun, shape: BoxShape.circle)),
+        ),
+      ]),
     );
   }
 }
@@ -159,8 +167,9 @@ class ToviHeader extends StatelessWidget {
 }
 
 class ToviTab {
-  const ToviTab(this.icon, this.label);
+  const ToviTab(this.icon, this.label, {IconData? activeIcon}) : activeIcon = activeIcon ?? icon;
   final IconData icon;
+  final IconData activeIcon;
   final String label;
 }
 
@@ -173,15 +182,16 @@ class ToviBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final still = MediaQuery.disableAnimationsOf(context);
     return DecoratedBox(
       decoration: const BoxDecoration(
-        color: Tovi.surface,
-        boxShadow: [BoxShadow(color: Color(0x141B1730), blurRadius: 18, offset: Offset(0, -6))],
+        color: ToviTokens.surface,
+        boxShadow: [BoxShadow(color: Color(0x1217142B), blurRadius: 20, offset: Offset(0, -4))],
       ),
       child: SafeArea(
         top: false,
         child: SizedBox(
-          height: 64,
+          height: 72,
           child: Row(
             children: [
               for (var i = 0; i < tabs.length; i++)
@@ -190,19 +200,43 @@ class ToviBar extends StatelessWidget {
                     button: true,
                     selected: index == i,
                     label: tabs[i].label,
-                    child: InkWell(
+                    excludeSemantics: true,
+                    child: InkResponse(
                       onTap: () => onSelect(i),
+                      radius: 36,
+                      highlightShape: BoxShape.rectangle,
+                      containedInkWell: true,
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           AnimatedContainer(
-                            duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 180),
-                            width: index == i ? 18 : 0,
-                            height: 3,
-                            margin: const EdgeInsets.only(bottom: 6),
-                            decoration: BoxDecoration(color: Tovi.violet, borderRadius: BorderRadius.circular(99)),
+                            duration: still ? Duration.zero : ToviTokens.calm,
+                            curve: Curves.easeOutCubic,
+                            width: index == i ? 58 : 40,
+                            height: 32,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: index == i ? ToviTokens.violetSoft : Colors.transparent,
+                              borderRadius: BorderRadius.circular(99),
+                            ),
+                            child: Icon(
+                              index == i ? tabs[i].activeIcon : tabs[i].icon,
+                              size: 24,
+                              color: index == i ? ToviTokens.violet : ToviTokens.muted,
+                            ),
                           ),
-                          Icon(tabs[i].icon, size: 24, color: index == i ? Tovi.violet : const Color(0xFFB7B3C9)),
+                          const SizedBox(height: 4),
+                          Text(
+                            tabs[i].label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 11.5,
+                              height: 1.2,
+                              fontWeight: index == i ? FontWeight.w700 : FontWeight.w500,
+                              color: index == i ? ToviTokens.violet : ToviTokens.muted,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -257,17 +291,22 @@ class StatPill extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 112,
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-      decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(22)),
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 14),
+      decoration: BoxDecoration(color: ToviTokens.surface, borderRadius: BorderRadius.circular(ToviTokens.radiusMd), boxShadow: ToviTokens.raised),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: Colors.white, size: 22),
-          const SizedBox(height: 8),
-          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.center, style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.w500)),
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(color: color.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(ToviTokens.radiusSm)),
+            child: Icon(icon, color: color, size: 20),
+          ),
+          const SizedBox(height: 12),
+          Text(value, style: const TextStyle(color: ToviTokens.ink, fontSize: 22, fontWeight: FontWeight.w700, height: 1.1)),
           const SizedBox(height: 2),
-          Text(value, style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w700, height: 1.1)),
+          Text(label, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(color: ToviTokens.muted, fontSize: 12.5, fontWeight: FontWeight.w500)),
         ],
       ),
     );
@@ -287,7 +326,7 @@ class SectionHead extends StatelessWidget {
       padding: const EdgeInsets.only(top: 22, bottom: 12),
       child: Row(
         children: [
-          Expanded(child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Tovi.ink))),
+          Expanded(child: Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: Tovi.ink))),
           if (action != null)
             TextButton(
               onPressed: onAction,
@@ -312,11 +351,13 @@ class CoursePoster extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: color,
-      borderRadius: BorderRadius.circular(26),
+      borderRadius: BorderRadius.circular(ToviTokens.radiusLg),
       clipBehavior: Clip.antiAlias,
       child: InkWell(
         onTap: onTap,
-        child: Padding(
+        child: CustomPaint(
+          painter: _OrbitPainter(),
+          child: Padding(
           padding: const EdgeInsets.all(16),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -339,10 +380,25 @@ class CoursePoster extends StatelessWidget {
               ),
             ],
           ),
+          ),
         ),
       ),
     );
   }
+}
+
+class _OrbitPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final fill = Paint()..color = Colors.white.withValues(alpha: 0.10);
+    final center = Offset(size.width * 0.06, size.height * 0.92);
+    canvas.drawCircle(center, size.height * 0.42, fill);
+    canvas.drawCircle(center, size.height * 0.26, Paint()..color = Colors.white.withValues(alpha: 0.10));
+    canvas.drawCircle(Offset(size.width * 0.30, size.height * 0.62), 5, Paint()..color = ToviTokens.sun);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 class SoftPanel extends StatelessWidget {
@@ -355,9 +411,9 @@ class SoftPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final radius = BorderRadius.circular(22);
+    final radius = BorderRadius.circular(ToviTokens.radiusMd);
     return DecoratedBox(
-      decoration: BoxDecoration(borderRadius: radius, boxShadow: color == Tovi.surface ? Tovi.shadow : null),
+      decoration: BoxDecoration(borderRadius: radius, boxShadow: color == Tovi.surface ? ToviTokens.raised : null),
       child: Material(
         color: color,
         borderRadius: radius,
@@ -571,7 +627,7 @@ class Bone extends StatelessWidget {
     return Container(
       width: width,
       height: height,
-      decoration: BoxDecoration(color: const Color(0xFFE7E3F4), borderRadius: BorderRadius.circular(radius)),
+      decoration: BoxDecoration(color: ToviTokens.sunken, borderRadius: BorderRadius.circular(radius)),
     );
   }
 }
