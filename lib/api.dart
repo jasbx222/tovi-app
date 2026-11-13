@@ -24,6 +24,8 @@ class ToviApi {
 
   Future<dynamic> put(String path, Object body) => _send('PUT', path, body);
 
+  Future<dynamic> delete(String path) => _send('DELETE', path);
+
   Future<dynamic> _send(String method, String path, [Object? body]) async {
     final request = http.Request(method, Uri.parse('$base$path'));
     if (token.isNotEmpty) request.headers['Authorization'] = 'Bearer $token';
