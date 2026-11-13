@@ -42,4 +42,12 @@ void main() {
     expect(lessonCount(Copy(true), 1, free: true), 'درس مجاني');
     expect(lessonCount(Copy(true), 5), '5 دروس');
   });
+
+  test('Cards.ToneFor.StableAndNoYellow', () {
+    expect(toneFor('4314911b-a2bf-401c-bcd4-336dde343f9f'), toneFor('4314911b-a2bf-401c-bcd4-336dde343f9f'));
+    expect(toneFor('4314911b-a2bf-401c-bcd4-336dde343f9f'), isNot(toneFor('57f6d816-0682-43c0-8a9b-85e221e2591c')));
+    for (final seed in ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']) {
+      expect(toneFor(seed).first, isNot(const Color(0xFFE59A00)));
+    }
+  });
 }
