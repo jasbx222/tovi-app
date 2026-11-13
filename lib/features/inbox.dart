@@ -7,6 +7,7 @@ import '../course_page.dart';
 import '../exam_page.dart';
 import '../meeting_page.dart';
 import '../session.dart';
+import '../teacher_page.dart';
 import '../ui.dart';
 import 'hub_kit.dart';
 import 'places.dart';
@@ -77,7 +78,7 @@ class _NoticesPageState extends State<NoticesPage> {
       'exam' => ExamPage(session: s, id: id),
       'summary' => SummaryPage(session: s, id: id),
       'institute' => InstitutePage(session: s, id: id),
-      'teacher' => teacherPageBuilder?.call(s, id),
+      'teacher' => TeacherPage(session: s, id: id),
       _ => null,
     };
     if (page != null) await Navigator.push(context, toviRoute(page));

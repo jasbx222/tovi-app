@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../api.dart';
 import '../progress_page.dart';
 import '../session.dart';
+import '../teacher_page.dart';
 import '../ui.dart';
 import 'exams.dart';
 import 'hub_kit.dart';
@@ -143,6 +144,7 @@ class _MePageState extends State<MePage> {
             _Entry(Icons.quiz_rounded, ToviTokens.violet, copy.pick('اختباراتي', 'My exams'), () => go(ExamsPage(session: s))),
             _Entry(Icons.lock_open_rounded, ToviTokens.mint, copy.pick('اللي فعّلته', 'What I unlocked'), () => go(UnlockedPage(session: s))),
             _Entry(Icons.bookmark_rounded, ToviTokens.coral, copy.pick('المحفوظات والإعجابات', 'Saved and liked'), () => go(SavedPage(session: s))),
+            _Entry(Icons.person_pin_rounded, ToviTokens.violet, copy.pick('المعلمون اللي أتابعهم', 'Teachers I follow'), () => go(TeachersPage(session: s, followingOnly: true))),
             _Entry(Icons.video_library_rounded, ToviTokens.sky, copy.pick('حصصي والإعادات', 'Sessions and replays'), () => go(Scaffold(backgroundColor: ToviTokens.page, body: SafeArea(child: SessionsHub(session: s, standalone: true))))),
           ]),
           const SizedBox(height: 14),

@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 
 import '../session.dart';
+import '../teacher_page.dart';
 import '../ui.dart';
 import 'account.dart';
 import 'hub_kit.dart';
@@ -166,7 +167,7 @@ class _ExplorePageState extends State<ExplorePage> {
             CourseStrip(session: s, rows: fresh),
           ],
           if (teachers.isNotEmpty) ...[
-            Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: SectionHead(title: copy.pick('معلمون مميزون', 'Top teachers'))),
+            Padding(padding: const EdgeInsets.symmetric(horizontal: 20), child: SectionHead(title: copy.pick('معلمون مميزون', 'Top teachers'), action: copy.viewAll, onAction: () => Navigator.push(context, toviRoute(TeachersPage(session: s))))),
             SizedBox(
               height: 132,
               child: ListView.separated(

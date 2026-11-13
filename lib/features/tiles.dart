@@ -3,6 +3,7 @@ import 'package:material_ui/material_ui.dart';
 import '../api.dart';
 import '../course_page.dart';
 import '../session.dart';
+import '../teacher_page.dart';
 import '../ui.dart';
 import 'hub_kit.dart';
 
@@ -277,11 +278,8 @@ class IconOrb extends StatelessWidget {
   }
 }
 
-/// Builds the teacher profile screen. Left empty until that screen exists, so teacher rows are not tappable.
-Widget Function(Session session, String id)? teacherPageBuilder;
-
+/// Opens the teacher's profile.
 VoidCallback? openTeacher(BuildContext context, Session session, Map<String, dynamic> row) {
-  final builder = teacherPageBuilder;
-  if (builder == null) return null;
-  return () => Navigator.push(context, toviRoute(builder(session, asText(row['id']))));
+  if (asText(row['id']).isEmpty) return null;
+  return () => Navigator.push(context, toviRoute(TeacherPage(session: session, id: asText(row['id']), preview: row)));
 }

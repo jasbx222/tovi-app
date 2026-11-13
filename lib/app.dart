@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import 'api.dart';
+import 'cards.dart';
 import 'copy.dart';
 import 'course_page.dart';
 import 'exam_page.dart';
@@ -18,6 +19,7 @@ import 'push.dart';
 import 'redeem.dart';
 import 'session.dart';
 import 'student_rules.dart';
+import 'teacher_page.dart';
 import 'ui.dart';
 
 export 'auth.dart';
@@ -156,6 +158,8 @@ class _HomePageState extends State<HomePage> {
   String error = '';
   List<Map<String, dynamic>> domains = [];
   Map<String, dynamic>? progress;
+  List<Map<String, dynamic>> teachers = [];
+  final following = <String>{};
   var loading = true;
 
   @override
@@ -190,6 +194,7 @@ class _HomePageState extends State<HomePage> {
     if (inbox is Map) nextNotes = '${asInt(asMap(inbox)['unread'])}';
     setState(() {
       data = asMap(home);
+      teachers = asMaps(asMap(home)['teachers']);
       name = nextName;
       notes = nextNotes;
       domains = results[3] is List ? asMaps(results[3]) : [];
@@ -197,6 +202,22 @@ class _HomePageState extends State<HomePage> {
       error = '';
       loading = false;
     });
+  }
+
+  Future<void> follow(int index) async {
+    final id = asText(teachers[index]['id']);
+    setState(() => following.add(id));
+    final next = await toggleFollow(context, widget.session, teachers[index]);
+    if (!mounted) return;
+    setState(() {
+      following.remove(id);
+      if (next != null) teachers[index] = next;
+    });
+  }
+
+  Future<void> openTeacher(Map<String, dynamic> row) async {
+    await Navigator.push(context, toviRoute(TeacherPage(session: widget.session, id: asText(row['id']), preview: row)));
+    if (mounted) await load();
   }
 
   Future<void> redeem() async {
@@ -287,27 +308,52 @@ class _HomePageState extends State<HomePage> {
               EmptyNote(icon: Icons.menu_book_rounded, text: copy.empty)
             else
               SizedBox(
-                height: 176,
+                height: 222,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
+                  clipBehavior: Clip.none,
                   itemCount: courses.length,
                   separatorBuilder: (_, _) => const SizedBox(width: 12),
                   itemBuilder: (context, i) {
                     final row = courses[i];
                     final viewport = MediaQuery.sizeOf(context).width - 40;
-                    final width = courses.length == 1 ? viewport : (viewport - 12) / 2;
+                    final width = courses.length == 1 ? viewport : (viewport * 0.72).clamp(220.0, 300.0);
                     return SizedBox(
                       width: width,
-                      child: CoursePoster(
-                        title: asText(row['title']),
-                        meta: firstMeta(row, const ['teacherName', 'instructor', 'author']),
-                        color: Tovi.courses[i % Tovi.courses.length],
-                        onTap: () => Navigator.push(context, toviRoute(CoursePage(session: widget.session, id: asText(row['id'])))),
-                      ),
+                      child: CourseCard(row: row, copy: copy, onTap: () => Navigator.push(context, toviRoute(CoursePage(session: widget.session, id: asText(row['id']))))),
                     );
                   },
                 ),
               ),
+            if (teachers.isNotEmpty) ...[
+              SectionHead(
+                title: copy.pick('معلّمون لك', 'Teachers for you'),
+                action: copy.viewAll,
+                onAction: () async {
+                  await Navigator.push(context, toviRoute(TeachersPage(session: widget.session)));
+                  if (mounted) await load();
+                },
+              ),
+              SizedBox(
+                height: 214,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  clipBehavior: Clip.none,
+                  itemCount: teachers.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 12),
+                  itemBuilder: (context, i) => SizedBox(
+                    width: 158,
+                    child: TeacherCard(
+                      row: teachers[i],
+                      copy: copy,
+                      busy: following.contains(asText(teachers[i]['id'])),
+                      onFollow: () => follow(i),
+                      onOpen: () => openTeacher(teachers[i]),
+                    ),
+                  ),
+                ),
+              ),
+            ],
             if (sessions.isNotEmpty) ...[
               SectionHead(title: copy.pick('جلساتك القادمة', 'Upcoming sessions'), action: copy.schedule, onAction: widget.onOpenSchedule),
               for (final row in sessions.take(3))
@@ -809,14 +855,11 @@ class _SearchPageState extends State<SearchPage> {
                 for (var i = 0; i < items.length; i++)
                   Padding(
                     padding: const EdgeInsets.only(bottom: 12),
-                    child: SizedBox(
-                      height: 168,
-                      child: CoursePoster(
-                        title: asText(items[i]['title']),
-                        meta: firstMeta(items[i], const ['teacherName', 'instructor']),
-                        color: Tovi.courses[i % Tovi.courses.length],
-                        onTap: () => Navigator.push(context, toviRoute(CoursePage(session: widget.session, id: asText(items[i]['id'])))),
-                      ),
+                    child: CourseCard(
+                      row: items[i],
+                      copy: copy,
+                      coverHeight: 150,
+                      onTap: () => Navigator.push(context, toviRoute(CoursePage(session: widget.session, id: asText(items[i]['id'])))),
                     ),
                   ),
             ],
@@ -863,7 +906,10 @@ class LearnPage extends StatelessWidget {
               final link = links[i];
               final tone = Tovi.courses[i % Tovi.courses.length];
               return SoftPanel(
-                onTap: () => Navigator.push(context, toviRoute(CatalogPage(session: session, path: link.$1, field: link.$2, title: link.$3))),
+                onTap: () => Navigator.push(
+                  context,
+                  toviRoute(link.$1.endsWith('/teachers') ? TeachersPage(session: session) : CatalogPage(session: session, path: link.$1, field: link.$2, title: link.$3)),
+                ),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   Container(
                     width: 44,
@@ -947,7 +993,7 @@ class _CatalogPageState extends State<CatalogPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Tovi.surface,
+      backgroundColor: courses ? Tovi.page : Tovi.surface,
       body: Column(children: [
         ToviHeader(title: widget.title, onBack: () => Navigator.pop(context)),
         Expanded(
@@ -975,7 +1021,18 @@ class _CatalogPageState extends State<CatalogPage> {
                           const SizedBox(height: 12),
                         ],
                         if (items.isEmpty) EmptyNote(icon: Icons.inbox_rounded, text: widget.session.copy.empty),
-                        if (_poster)
+                        if (courses)
+                          LayoutBuilder(builder: (context, constraints) {
+                            final columns = constraints.maxWidth >= 1000 ? 3 : constraints.maxWidth >= 600 ? 2 : 1;
+                            return GridView.builder(
+                              shrinkWrap: true,
+                              physics: const NeverScrollableScrollPhysics(),
+                              itemCount: items.length,
+                              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: columns, mainAxisSpacing: 14, crossAxisSpacing: 14, mainAxisExtent: 240),
+                              itemBuilder: (context, i) => CourseCard(row: items[i], copy: widget.session.copy, coverHeight: 160, onTap: () => open(items[i])),
+                            );
+                          })
+                        else if (_poster)
                           for (var i = 0; i < items.length; i++)
                             Padding(
                               padding: const EdgeInsets.only(bottom: 12),
@@ -1228,6 +1285,8 @@ class _ProfilePageState extends State<ProfilePage> {
             const SizedBox(height: 14),
             SoftPanel(padding: EdgeInsets.zero, child: Column(children: [
               _ProfileAction(icon: Icons.insights_rounded, label: copy.pick('تقدّمي ونقاطي', 'My progress and XP'), onTap: () => Navigator.push(context, toviRoute(ProgressPage(session: widget.session)))),
+              const Divider(height: 1, color: Tovi.line),
+              _ProfileAction(icon: Icons.people_alt_rounded, label: copy.pick('المعلمون الذين أتابعهم', 'Teachers I follow'), onTap: () => Navigator.push(context, toviRoute(TeachersPage(session: widget.session, followingOnly: true)))),
               const Divider(height: 1, color: Tovi.line),
               _ProfileAction(icon: Icons.quiz_rounded, label: copy.pick('فتح اختبار', 'Open an exam'), onTap: () => Navigator.push(context, toviRoute(ExamEntry(session: widget.session)))),
               const Divider(height: 1, color: Tovi.line),
