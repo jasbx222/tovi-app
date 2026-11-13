@@ -15,7 +15,8 @@ String? mediaUrl(Object? path) {
 }
 
 /// Every course and teacher gets a stable gradient pair from its id, so the
-/// same card always looks the same without a stored colour.
+/// same card always looks the same without a stored colour. Yellow is kept
+/// out of this list because it stands for points.
 List<Color> toneFor(String seed) {
   const pairs = <List<Color>>[
     [Color(0xFF6A4CFF), Color(0xFF9B7BFF)],
@@ -23,11 +24,12 @@ List<Color> toneFor(String seed) {
     [Color(0xFFFF6B57), Color(0xFFFF9E6B)],
     [Color(0xFF14A37F), Color(0xFF4FCFA8)],
     [Color(0xFF8A3FD1), Color(0xFFD36BFF)],
-    [Color(0xFFE59A00), Color(0xFFFFC23D)],
+    [Color(0xFF0E8FA8), Color(0xFF46C3D6)],
   ];
+  // Polynomial hash kept under 2^53 so web and mobile pick the same colour.
   var hash = 0;
   for (final unit in seed.codeUnits) {
-    hash = (hash * 31 + unit) & 0x7fffffff;
+    hash = (hash * 131 + unit) % 1000000007;
   }
   return pairs[hash % pairs.length];
 }
@@ -220,8 +222,13 @@ class TeacherCard extends StatelessWidget {
             gradient: LinearGradient(
               begin: Alignment.topCenter,
               end: Alignment.bottomCenter,
-              stops: const [0, 0.42, 0.42],
-              colors: [tone[0].withValues(alpha: 0.14), tone[1].withValues(alpha: 0.06), ToviTokens.surface],
+              stops: const [0, 0.55, 0.9],
+              // Opaque stops: fading a translucent tint into white bands visibly.
+              colors: [
+                Color.alphaBlend(tone[0].withValues(alpha: 0.13), ToviTokens.surface),
+                Color.alphaBlend(tone[1].withValues(alpha: 0.05), ToviTokens.surface),
+                ToviTokens.surface,
+              ],
             ),
           ),
           child: Padding(
