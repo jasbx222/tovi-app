@@ -6,6 +6,12 @@ import 'cards.dart';
 import 'copy.dart';
 import 'course_page.dart';
 import 'exam_page.dart';
+import 'features/account.dart';
+import 'features/explore.dart';
+import 'features/hub_kit.dart' show hubImageToken;
+import 'features/inbox.dart';
+import 'features/search.dart';
+import 'features/sessions.dart';
 import 'live_parts.dart';
 import 'meeting_page.dart';
 import 'progress_page.dart';
@@ -28,28 +34,41 @@ class HomeShell extends StatefulWidget {
 
 class _HomeShellState extends State<HomeShell> {
   var index = 0;
+  late final unread = UnreadCounter(widget.session)..start();
 
   @override
   void initState() {
     super.initState();
     registerDeviceToken(widget.session);
+    hubImageToken = widget.session.token;
+    WidgetsBinding.instance.addPostFrameCallback((_) { if (mounted) maybeOnboard(context, widget.session); });
+  }
+
+  @override
+  void dispose() {
+    unread.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final copy = widget.session.copy;
     final pages = [
       HomePage(session: widget.session, onOpenSchedule: () => setState(() => index = 1), onOpenInbox: () => setState(() => index = 3)),
-      SchedulePage(session: widget.session),
-      LearnPage(session: widget.session),
-      InboxPage(session: widget.session),
-      ProfilePage(session: widget.session),
+      SessionsHub(session: widget.session),
+      ExplorePage(session: widget.session),
+      NoticesPage(session: widget.session, counter: unread),
+      MePage(session: widget.session),
     ];
+    return ValueListenableBuilder<int>(valueListenable: unread, builder: (context, count, _) => _frame(context, pages, count));
+  }
+
+  Widget _frame(BuildContext context, List<Widget> pages, int count) {
+    final copy = widget.session.copy;
     final tabs = [
       ToviTab(Icons.home_outlined, copy.home, activeIcon: Icons.home_rounded),
       ToviTab(Icons.event_note_outlined, copy.schedule, activeIcon: Icons.event_note_rounded),
       ToviTab(Icons.auto_stories_outlined, copy.learn, activeIcon: Icons.auto_stories_rounded),
-      ToviTab(Icons.notifications_none_rounded, copy.inbox, activeIcon: Icons.notifications_rounded),
+      ToviTab(Icons.notifications_none_rounded, copy.inbox, activeIcon: Icons.notifications_rounded, badge: count),
       ToviTab(Icons.person_outline_rounded, copy.profile, activeIcon: Icons.person_rounded),
     ];
     final wide = MediaQuery.sizeOf(context).width >= 840;
@@ -153,7 +172,7 @@ class _HomePageState extends State<HomePage> {
     final results = await Future.wait([
       _guard(widget.session.api.get('/api/student/home')),
       _guard(widget.session.api.get('/api/student/profile')),
-      _guard(widget.session.api.get('/api/student/notifications')),
+      _guard(widget.session.api.get('/api/student/inbox/unread')),
       _guard(widget.session.api.get('/api/student/learning-domains')),
       _guard(widget.session.api.get('/api/student/progress')),
     ]);
@@ -172,7 +191,7 @@ class _HomePageState extends State<HomePage> {
       nextName = '${asText(row['firstName'])} ${asText(row['lastName'])}'.trim();
     }
     var nextNotes = '—';
-    if (inbox is Map) nextNotes = '${asMaps(asMap(inbox)['items']).length}';
+    if (inbox is Map) nextNotes = '${asInt(asMap(inbox)['unread'])}';
     setState(() {
       data = asMap(home);
       teachers = asMaps(asMap(home)['teachers']);
@@ -235,7 +254,7 @@ class _HomePageState extends State<HomePage> {
             role: copy.student,
             inboxTip: copy.inbox,
             notes: notes == '—' || notes == '0' ? null : notes,
-            onSearch: () => Navigator.push(context, toviRoute(SearchPage(session: widget.session))),
+            onSearch: () => Navigator.push(context, toviRoute(FindPage(session: widget.session))),
             onInbox: widget.onOpenInbox,
           ),
           const SizedBox(height: 16),

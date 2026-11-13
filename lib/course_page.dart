@@ -9,6 +9,7 @@ import 'student_rules.dart';
 import 'teacher_page.dart';
 import 'ui.dart';
 import 'video_page.dart';
+import 'features/hub_kit.dart' show HubApi;
 
 class CoursePage extends StatefulWidget {
   const CoursePage({super.key, required this.session, required this.id});
@@ -24,11 +25,44 @@ class _CoursePageState extends State<CoursePage> {
   String error = '';
   var loading = true;
   var tab = 0;
+  var liked = false;
+  var saved = false;
 
   @override
   void initState() {
     super.initState();
     load();
+    loadMarks();
+  }
+
+  Future<void> loadMarks() async {
+    try {
+      final value = asMap(await widget.session.api.get('/api/student/courses/${widget.id}/marks'));
+      if (mounted) setState(() { liked = value['liked'] == true; saved = value['saved'] == true; });
+    } catch (_) {}
+  }
+
+  Future<void> toggle(bool like) async {
+    final copy = widget.session.copy;
+    final on = like ? liked : saved;
+    final path = '/api/student/courses/${widget.id}/${like ? 'like' : 'save'}';
+    setState(() => like ? liked = !on : saved = !on);
+    try {
+      if (on) {
+        await widget.session.api.sendDelete(path);
+      } else {
+        await widget.session.api.post(path);
+      }
+      if (!mounted) return;
+      final text = like
+          ? (on ? copy.pick('شلت الإعجاب', 'Like removed') : copy.pick('عجبتك الدورة', 'Liked'))
+          : (on ? copy.pick('شلتها من المحفوظات', 'Removed from saved') : copy.pick('انحفظت بالمحفوظات', 'Saved'));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
+    } on ApiException catch (reason) {
+      if (mounted) setState(() { like ? liked = on : saved = on; error = studentMessage(reason.code, reason.message, copy.arabic); });
+    } catch (_) {
+      if (mounted) setState(() => like ? liked = on : saved = on);
+    }
   }
 
   Future<void> load() async {
@@ -37,15 +71,6 @@ class _CoursePageState extends State<CoursePage> {
       if (mounted) setState(() { data = value; error = ''; loading = false; });
     } on ApiException catch (reason) {
       if (mounted) setState(() { error = studentMessage(reason.code, reason.message, widget.session.copy.arabic); loading = false; });
-    }
-  }
-
-  Future<void> act(String path, String done) async {
-    try {
-      await widget.session.api.post(path);
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(done)));
-    } on ApiException catch (reason) {
-      if (mounted) setState(() => error = studentMessage(reason.code, reason.message, widget.session.copy.arabic));
     }
   }
 
@@ -142,12 +167,12 @@ class _CoursePageState extends State<CoursePage> {
                           color: Colors.white,
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                           onSelected: (value) {
-                            if (value == 'like') act('/api/student/courses/${widget.id}/like', copy.like);
-                            if (value == 'save') act('/api/student/courses/${widget.id}/save', copy.save);
+                            if (value == 'like') toggle(true);
+                            if (value == 'save') toggle(false);
                           },
                           itemBuilder: (context) => [
-                            PopupMenuItem(value: 'like', child: Text(copy.like)),
-                            PopupMenuItem(value: 'save', child: Text(copy.save)),
+                            PopupMenuItem(value: 'like', child: Row(children: [Icon(liked ? Icons.favorite_rounded : Icons.favorite_border_rounded, color: Tovi.coral, size: 20), const SizedBox(width: 10), Text(liked ? copy.pick('شيل الإعجاب', 'Unlike') : copy.like)])),
+                            PopupMenuItem(value: 'save', child: Row(children: [Icon(saved ? Icons.bookmark_rounded : Icons.bookmark_border_rounded, color: Tovi.violet, size: 20), const SizedBox(width: 10), Text(saved ? copy.pick('شيل من المحفوظات', 'Unsave') : copy.save)])),
                           ],
                           child: Container(
                             width: 44,
@@ -317,9 +342,9 @@ class _CoursePageState extends State<CoursePage> {
         ],
         const SizedBox(height: 12),
         Row(children: [
-          Expanded(child: ToviButton(label: copy.like, color: Tovi.violet, onPressed: () => act('/api/student/courses/${widget.id}/like', copy.like))),
+          Expanded(child: ToviButton(label: liked ? copy.pick('عجبتني ✓', 'Liked ✓') : copy.like, color: liked ? Tovi.coral : Tovi.violet, onPressed: () => toggle(true))),
           const SizedBox(width: 10),
-          Expanded(child: ToviButton(label: copy.save, color: Tovi.blue, onPressed: () => act('/api/student/courses/${widget.id}/save', copy.save))),
+          Expanded(child: ToviButton(label: saved ? copy.pick('محفوظة ✓', 'Saved ✓') : copy.save, color: Tovi.blue, onPressed: () => toggle(false))),
         ]),
       ],
     );

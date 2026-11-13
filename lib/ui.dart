@@ -167,10 +167,11 @@ class ToviHeader extends StatelessWidget {
 }
 
 class ToviTab {
-  const ToviTab(this.icon, this.label, {IconData? activeIcon}) : activeIcon = activeIcon ?? icon;
+  const ToviTab(this.icon, this.label, {IconData? activeIcon, this.badge = 0}) : activeIcon = activeIcon ?? icon;
   final IconData icon;
   final IconData activeIcon;
   final String label;
+  final int badge;
 }
 
 class ToviBar extends StatelessWidget {
@@ -219,10 +220,15 @@ class ToviBar extends StatelessWidget {
                               color: index == i ? ToviTokens.violetSoft : Colors.transparent,
                               borderRadius: BorderRadius.circular(99),
                             ),
-                            child: Icon(
-                              index == i ? tabs[i].activeIcon : tabs[i].icon,
-                              size: 24,
-                              color: index == i ? ToviTokens.violet : ToviTokens.muted,
+                            child: Badge(
+                              isLabelVisible: tabs[i].badge > 0,
+                              backgroundColor: ToviTokens.coral,
+                              label: Text(tabs[i].badge > 99 ? '99+' : '${tabs[i].badge}', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w800)),
+                              child: Icon(
+                                index == i ? tabs[i].activeIcon : tabs[i].icon,
+                                size: 24,
+                                color: index == i ? ToviTokens.violet : ToviTokens.muted,
+                              ),
                             ),
                           ),
                           const SizedBox(height: 4),
